@@ -4,11 +4,16 @@ import type { UserRole } from '@/types/database'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
-  requiredRole?: UserRole
+  requiredRole?: 'admin' | 'trainee' // 'admin' = super_admin or group_admin
+}
+
+// Check if role is an admin role (super_admin or group_admin)
+function isAdminRole(role: UserRole | null): boolean {
+  return role === 'super_admin' || role === 'group_admin'
 }
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading, role } = useAuth()
+  const { isAuthenticated, isLoading, role, mustChangePassword } = useAuth()
   const location = useLocation()
 
   // Show loading state
@@ -28,17 +33,26 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
+  // Force password change if required
+  if (mustChangePassword && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
+  }
+
   // Check role if required
-  if (requiredRole && role !== requiredRole) {
-    // Redirect to appropriate dashboard based on role
-    if (role === 'admin') {
-      return <Navigate to="/admin" replace />
+  if (requiredRole) {
+    const hasAccess = requiredRole === 'admin' ? isAdminRole(role) : role === 'trainee'
+
+    if (!hasAccess) {
+      // Redirect to appropriate dashboard based on role
+      if (isAdminRole(role)) {
+        return <Navigate to="/admin" replace />
+      }
+      if (role === 'trainee') {
+        return <Navigate to="/trainee" replace />
+      }
+      // If no role, redirect to login
+      return <Navigate to="/login" replace />
     }
-    if (role === 'trainee') {
-      return <Navigate to="/trainee" replace />
-    }
-    // If no role, redirect to login
-    return <Navigate to="/login" replace />
   }
 
   return <>{children}</>

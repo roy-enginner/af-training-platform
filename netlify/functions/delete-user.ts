@@ -2,14 +2,6 @@ import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 import { getCorsHeaders, createPreflightResponse } from './shared/cors'
 
-interface CreateUserRequest {
-  email: string
-  password: string
-  name: string
-  role: 'super_admin' | 'group_admin' | 'trainee'
-  group_id?: string
-}
-
 const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
   const origin = event.headers.origin
   const headers = getCorsHeaders(origin)
@@ -39,7 +31,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     },
   })
 
-  if (event.httpMethod !== 'POST') {
+  if (event.httpMethod !== 'DELETE') {
     return {
       statusCode: 405,
       headers,
@@ -84,62 +76,62 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   }
 
   try {
-    const body: CreateUserRequest = JSON.parse(event.body || '{}')
+    const body = JSON.parse(event.body || '{}')
+    const userId = body.userId
 
-    if (!body.email || !body.password || !body.name || !body.role) {
+    if (!userId) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'Missing required fields' }),
+        body: JSON.stringify({ error: 'Missing userId' }),
       }
     }
 
-    // Create auth user
-    const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email: body.email,
-      password: body.password,
-      email_confirm: true,
-    })
-
-    if (createError) {
+    // Prevent self-deletion
+    if (userId === caller.id) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: createError.message }),
+        body: JSON.stringify({ error: 'Cannot delete yourself' }),
       }
     }
 
-    // Update profile (created by database trigger)
-    const { data: profile, error: profileError } = await supabaseAdmin
+    // Check target user's role to prevent privilege escalation
+    const { data: targetProfile } = await supabaseAdmin
       .from('profiles')
-      .update({
-        email: body.email,
-        name: body.name,
-        role: body.role,
-        group_id: body.group_id || null,
-        must_change_password: true, // Force password change on first login
-      })
-      .eq('id', authData.user.id)
-      .select()
+      .select('role')
+      .eq('id', userId)
       .single()
 
-    if (profileError) {
-      console.error('Profile update error:', profileError)
-      // Rollback: delete auth user if profile update fails
-      await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+    // group_admin cannot delete super_admin or other group_admin
+    if (callerProfile?.role === 'group_admin') {
+      if (targetProfile?.role === 'super_admin' || targetProfile?.role === 'group_admin') {
+        return {
+          statusCode: 403,
+          headers,
+          body: JSON.stringify({ error: 'group_adminは上位権限のユーザーを削除できません' }),
+        }
+      }
+    }
+
+    // Delete user from Supabase Auth (profile will be deleted via cascade)
+    const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId)
+
+    if (deleteError) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: profileError.message }),
+        body: JSON.stringify({ error: deleteError.message }),
       }
     }
 
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ user: authData.user, profile }),
+      body: JSON.stringify({ success: true }),
     }
   } catch (error) {
+    console.error('Error deleting user:', error)
     return {
       statusCode: 500,
       headers,

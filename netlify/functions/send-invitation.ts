@@ -1,7 +1,7 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
+import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
-
-const resend = new Resend(process.env.RESEND_API_KEY)
+import { getCorsHeaders, createPreflightResponse } from './shared/cors'
 
 interface InvitationRequest {
   email: string
@@ -11,13 +11,90 @@ interface InvitationRequest {
 }
 
 const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
+  const origin = event.headers.origin
+  const headers = getCorsHeaders(origin)
+
+  // Handle preflight
+  if (event.httpMethod === 'OPTIONS') {
+    return createPreflightResponse(origin)
+  }
+
   // Only allow POST requests
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
+      headers,
       body: JSON.stringify({ error: 'Method not allowed' }),
     }
   }
+
+  // Verify authorization
+  const authHeader = event.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({ error: 'Unauthorized' }),
+    }
+  }
+
+  // Validate caller is admin
+  const supabaseUrl = process.env.VITE_SUPABASE_URL!
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: 'Server configuration error' }),
+    }
+  }
+
+  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+
+  const token = authHeader.split(' ')[1]
+  const { data: { user: caller }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+  if (authError || !caller) {
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({ error: 'Invalid token' }),
+    }
+  }
+
+  // Verify caller is admin
+  const { data: callerProfile } = await supabaseAdmin
+    .from('profiles')
+    .select('role')
+    .eq('id', caller.id)
+    .single()
+
+  if (callerProfile?.role !== 'super_admin' && callerProfile?.role !== 'group_admin') {
+    return {
+      statusCode: 403,
+      headers,
+      body: JSON.stringify({ error: 'Admin access required' }),
+    }
+  }
+
+  // Check Resend API key
+  const resendApiKey = process.env.RESEND_API_KEY
+  if (!resendApiKey) {
+    console.error('RESEND_API_KEY is not set')
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: 'Email service not configured' }),
+    }
+  }
+
+  const resend = new Resend(resendApiKey)
 
   try {
     const { email, name, password, loginUrl } = JSON.parse(event.body || '{}') as InvitationRequest
@@ -25,6 +102,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     if (!email || !name || !password || !loginUrl) {
       return {
         statusCode: 400,
+        headers,
         body: JSON.stringify({ error: 'Missing required fields' }),
       }
     }
@@ -102,18 +180,21 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       console.error('Resend error:', error)
       return {
         statusCode: 500,
+        headers,
         body: JSON.stringify({ error: 'Failed to send email' }),
       }
     }
 
     return {
       statusCode: 200,
+      headers,
       body: JSON.stringify({ success: true, messageId: data?.id }),
     }
   } catch (error) {
     console.error('Error:', error)
     return {
       statusCode: 500,
+      headers,
       body: JSON.stringify({ error: 'Internal server error' }),
     }
   }

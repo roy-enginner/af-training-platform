@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
   PlusIcon,
@@ -6,46 +6,78 @@ import {
   MagnifyingGlassIcon,
   PencilIcon,
   TrashIcon,
+  KeyIcon,
+  UsersIcon,
+  ShieldCheckIcon,
 } from '@heroicons/react/24/outline'
 import { Button, Input, Card, Table, Badge, Modal, ModalFooter, Alert } from '@/components/ui'
 import { supabase, generateRandomPassword } from '@/lib/supabase'
 import { UserForm } from '@/components/admin/UserForm'
 import { CsvUpload } from '@/components/admin/CsvUpload'
-import type { ProfileWithGroup, Group } from '@/types/database'
+import { useAuth } from '@/hooks/useAuth'
+import type { ProfileWithRelations, Group, Company, Department, UserRole } from '@/types/database'
+import { hasPermission } from '@/types/database'
+import type { UserFormSubmitData } from '@/components/admin/UserForm'
+
+type UserTab = 'trainees' | 'admins' | 'super_admins'
+type SortField = 'name' | 'email' | 'createdAt'
+type SortDirection = 'asc' | 'desc'
 
 export function UsersPage() {
-  const [users, setUsers] = useState<ProfileWithGroup[]>([])
+  const { user: currentUser, role: currentUserRole, profile } = useAuth()
+  const [users, setUsers] = useState<ProfileWithRelations[]>([])
   const [groups, setGroups] = useState<Group[]>([])
+  const [companies, setCompanies] = useState<Company[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [activeTab, setActiveTab] = useState<UserTab>('trainees')
+  const [sortField, setSortField] = useState<SortField>('createdAt')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [filterCompanyId, setFilterCompanyId] = useState<string>('')
+  const [filterGroupId, setFilterGroupId] = useState<string>('')
   const [isUserModalOpen, setIsUserModalOpen] = useState(false)
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
-  const [selectedUser, setSelectedUser] = useState<ProfileWithGroup | null>(null)
+  const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false)
+  const [isResettingPassword, setIsResettingPassword] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<ProfileWithRelations | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [addingUserRole, setAddingUserRole] = useState<'trainee' | 'admin' | 'super_admin'>('trainee')
+
+  // Check if current user can manage all users
+  const canManageAllUsers = currentUserRole ? hasPermission(currentUserRole, 'canManageAllUsers') : false
 
   // Fetch users
   const fetchUsers = useCallback(async () => {
     try {
       setIsLoading(true)
-      const { data, error: fetchError } = await supabase
+      let query = supabase
         .from('profiles')
         .select(`
           *,
+          company:companies(*),
+          department:departments(*),
           group:groups(*)
         `)
-        .order('created_at', { ascending: false })
+
+      // Group Admin can only see users in their own group
+      if (!canManageAllUsers && profile?.group_id) {
+        query = query.eq('group_id', profile.group_id)
+      }
+
+      const { data, error: fetchError } = await query.order('created_at', { ascending: false })
 
       if (fetchError) throw fetchError
-      setUsers(data as ProfileWithGroup[])
+      setUsers(data as ProfileWithRelations[])
     } catch (err) {
       console.error('Error fetching users:', err)
       setError('ユーザーの取得に失敗しました')
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [canManageAllUsers, profile?.group_id])
 
   // Fetch groups
   const fetchGroups = useCallback(async () => {
@@ -62,20 +94,107 @@ export function UsersPage() {
     }
   }, [])
 
+  // Fetch companies
+  const fetchCompanies = useCallback(async () => {
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('companies')
+        .select('*')
+        .order('name')
+
+      if (fetchError) throw fetchError
+      setCompanies(data || [])
+    } catch (err) {
+      console.error('Error fetching companies:', err)
+    }
+  }, [])
+
+  // Fetch departments
+  const fetchDepartments = useCallback(async () => {
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('departments')
+        .select('*')
+        .order('name')
+
+      if (fetchError) throw fetchError
+      setDepartments(data || [])
+    } catch (err) {
+      console.error('Error fetching departments:', err)
+    }
+  }, [])
+
   useEffect(() => {
     fetchUsers()
     fetchGroups()
-  }, [fetchUsers, fetchGroups])
+    fetchCompanies()
+    fetchDepartments()
+  }, [fetchUsers, fetchGroups, fetchCompanies, fetchDepartments])
 
-  // Filter users by search query
-  const filteredUsers = users.filter(
-    (user) =>
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.group?.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  // Filter and sort users
+  const filteredUsers = useMemo(() => {
+    let result = users.filter((user) => {
+      // Tab filter: trainees vs admins vs super_admins
+      if (activeTab === 'trainees' && user.role !== 'trainee') return false
+      if (activeTab === 'admins' && user.role !== 'group_admin') return false
+      if (activeTab === 'super_admins' && user.role !== 'super_admin') return false
 
-  // Handle user creation
-  const handleCreateUser = async (data: { name: string; email?: string; role: string; groupId: string | null }) => {
+      // Search filter
+      const matchesSearch =
+        user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.group?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+
+      if (!matchesSearch) return false
+
+      // Company filter
+      if (filterCompanyId && user.company_id !== filterCompanyId) return false
+
+      // Group filter
+      if (filterGroupId && user.group_id !== filterGroupId) return false
+
+      return true
+    })
+
+    // Sort
+    result.sort((a, b) => {
+      let comparison = 0
+      switch (sortField) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name, 'ja')
+          break
+        case 'email':
+          comparison = (a.email || '').localeCompare(b.email || '', 'ja')
+          break
+        case 'createdAt':
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          break
+      }
+      return sortDirection === 'asc' ? comparison : -comparison
+    })
+
+    return result
+  }, [users, activeTab, searchQuery, filterCompanyId, filterGroupId, sortField, sortDirection])
+
+  // Toggle sort (accepts string for Table component compatibility)
+  const handleSort = (field: string) => {
+    const sortableField = field as SortField
+    if (sortField === sortableField) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(sortableField)
+      setSortDirection('asc')
+    }
+  }
+
+  // Groups filtered by selected company
+  const filteredGroupsForFilter = useMemo(() => {
+    if (!filterCompanyId) return groups
+    return groups.filter(g => g.company_id === filterCompanyId)
+  }, [groups, filterCompanyId])
+
+  // Handle user creation via Netlify Function
+  const handleCreateUser = async (data: UserFormSubmitData) => {
     if (!data.email) {
       setError('メールアドレスは必須です')
       return
@@ -84,26 +203,34 @@ export function UsersPage() {
       const password = generateRandomPassword()
       const appUrl = import.meta.env.VITE_APP_URL || window.location.origin
 
-      // Create user in Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: data.email,
-        password,
-        email_confirm: true,
-        user_metadata: {
+      // Get current session for authorization
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
+
+      // Create user via Netlify Function (server-side)
+      const response = await fetch('/.netlify/functions/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          email: data.email,
+          password,
           name: data.name,
           role: data.role,
-        },
+          group_id: data.groupId,
+          company_id: data.companyId,
+          department_id: data.departmentId,
+          is_individual: data.isIndividual,
+          start_date: data.startDate,
+          end_date: data.endDate,
+          review_period_days: data.reviewPeriodDays,
+        }),
       })
 
-      if (authError) throw authError
-
-      // Update profile with group_id
-      if (data.groupId && authData.user) {
-        await supabase
-          .from('profiles')
-          .update({ group_id: data.groupId })
-          .eq('id', authData.user.id)
-      }
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Failed to create user')
 
       // Send invitation email
       await fetch('/.netlify/functions/send-invitation', {
@@ -122,12 +249,12 @@ export function UsersPage() {
       fetchUsers()
     } catch (err) {
       console.error('Error creating user:', err)
-      setError('ユーザーの作成に失敗しました')
+      setError(err instanceof Error ? err.message : 'ユーザーの作成に失敗しました')
     }
   }
 
   // Handle user update
-  const handleUpdateUser = async (data: { name: string; email?: string; role: string; groupId: string | null }) => {
+  const handleUpdateUser = async (data: UserFormSubmitData) => {
     if (!selectedUser) return
 
     try {
@@ -135,8 +262,14 @@ export function UsersPage() {
         .from('profiles')
         .update({
           name: data.name,
-          role: data.role as 'admin' | 'trainee',
+          role: data.role as UserRole,
           group_id: data.groupId,
+          company_id: data.companyId,
+          department_id: data.departmentId,
+          is_individual: data.isIndividual,
+          start_date: data.startDate,
+          end_date: data.endDate,
+          review_period_days: data.reviewPeriodDays,
         })
         .eq('id', selectedUser.id)
 
@@ -152,14 +285,35 @@ export function UsersPage() {
     }
   }
 
-  // Handle user deletion
+  // Handle user deletion via Netlify Function
   const handleDeleteUser = async () => {
     if (!selectedUser) return
 
+    // Prevent self-deletion
+    if (selectedUser.id === currentUser?.id) {
+      setError('自分自身を削除することはできません')
+      setIsDeleteModalOpen(false)
+      setSelectedUser(null)
+      return
+    }
+
     try {
-      // Delete from Supabase Auth (profile will be deleted automatically via cascade)
-      const { error: deleteError } = await supabase.auth.admin.deleteUser(selectedUser.id)
-      if (deleteError) throw deleteError
+      // Get current session for authorization
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
+
+      // Delete user via Netlify Function (server-side)
+      const response = await fetch('/.netlify/functions/delete-user', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ userId: selectedUser.id }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Failed to delete user')
 
       setSuccessMessage('ユーザーを削除しました')
       setIsDeleteModalOpen(false)
@@ -167,77 +321,218 @@ export function UsersPage() {
       fetchUsers()
     } catch (err) {
       console.error('Error deleting user:', err)
-      setError('ユーザーの削除に失敗しました')
+      setError(err instanceof Error ? err.message : 'ユーザーの削除に失敗しました')
     }
   }
 
-  // Handle CSV import
-  const handleCsvImport = async (importedUsers: Array<{ groupName: string; userName: string; email: string }>) => {
+  // Handle password reset
+  const handleResetPassword = async () => {
+    if (!selectedUser || !selectedUser.email) {
+      setError('メールアドレスが設定されていないため、パスワードをリセットできません')
+      setIsResetPasswordModalOpen(false)
+      setSelectedUser(null)
+      return
+    }
+
+    // Prevent self password reset
+    if (selectedUser.id === currentUser?.id) {
+      setError('自分自身のパスワードはこの方法ではリセットできません')
+      setIsResetPasswordModalOpen(false)
+      setSelectedUser(null)
+      return
+    }
+
+    setIsResettingPassword(true)
+    try {
+      const newPassword = generateRandomPassword()
+      const appUrl = import.meta.env.VITE_APP_URL || window.location.origin
+
+      // Get current session for authorization
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
+
+      // Reset password via Netlify Function
+      const response = await fetch('/.netlify/functions/reset-user-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          userId: selectedUser.id,
+          newPassword,
+          userEmail: selectedUser.email,
+          userName: selectedUser.name,
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Failed to reset password')
+
+      // Send email with new password
+      await fetch('/.netlify/functions/send-invitation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: selectedUser.email,
+          name: selectedUser.name,
+          password: newPassword,
+          loginUrl: `${appUrl}/login`,
+        }),
+      })
+
+      setSuccessMessage(`${selectedUser.name}のパスワードをリセットし、メールを送信しました`)
+      setIsResetPasswordModalOpen(false)
+      setSelectedUser(null)
+      fetchUsers()
+    } catch (err) {
+      console.error('Error resetting password:', err)
+      setError(err instanceof Error ? err.message : 'パスワードのリセットに失敗しました')
+    } finally {
+      setIsResettingPassword(false)
+    }
+  }
+
+  // Handle CSV import via Netlify Function
+  const handleCsvImport = async (importedUsers: import('@/types/database').CsvUserRow[]) => {
     try {
       const appUrl = import.meta.env.VITE_APP_URL || window.location.origin
-      let successCount = 0
+      let addedCount = 0
+      let deletedCount = 0
+
+      // Get current session for authorization
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
 
       for (const user of importedUsers) {
-        // Find or create group
-        let groupId: string | null = null
-        if (user.groupName) {
-          const existingGroup = groups.find((g) => g.name === user.groupName)
-          if (existingGroup) {
-            groupId = existingGroup.id
-          } else {
-            const { data: newGroup } = await supabase
-              .from('groups')
-              .insert({ name: user.groupName })
-              .select()
-              .single()
-            if (newGroup) {
-              groupId = newGroup.id
-              setGroups((prev) => [...prev, newGroup])
+        if (user.action === 'add') {
+          // Find company if specified
+          let companyId: string | null = null
+          if (user.companyName) {
+            const existingCompany = companies.find(
+              (c) => c.name.toLowerCase() === user.companyName.toLowerCase()
+            )
+            if (existingCompany) {
+              companyId = existingCompany.id
             }
           }
+
+          // Find department if specified
+          let departmentId: string | null = null
+          if (user.departmentName && companyId) {
+            const existingDept = departments.find(
+              (d) => d.company_id === companyId && d.name.toLowerCase() === user.departmentName.toLowerCase()
+            )
+            if (existingDept) {
+              departmentId = existingDept.id
+            }
+          }
+
+          // Find or create group
+          let groupId: string | null = null
+          if (!user.isIndividual && user.groupName) {
+            const existingGroup = groups.find(
+              (g) => g.name.toLowerCase() === user.groupName.toLowerCase() &&
+                    (companyId ? g.company_id === companyId : true)
+            )
+            if (existingGroup) {
+              groupId = existingGroup.id
+            } else {
+              const { data: newGroup } = await supabase
+                .from('groups')
+                .insert({
+                  name: user.groupName,
+                  company_id: companyId,
+                  department_id: departmentId,
+                })
+                .select()
+                .single()
+              if (newGroup) {
+                groupId = newGroup.id
+                setGroups((prev) => [...prev, newGroup])
+              }
+            }
+          }
+
+          // Create user via Netlify Function
+          const password = generateRandomPassword()
+          const response = await fetch('/.netlify/functions/create-user', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              email: user.email,
+              password,
+              name: user.userName,
+              role: user.role || 'trainee',
+              company_id: companyId,
+              department_id: departmentId,
+              group_id: groupId,
+              is_individual: user.isIndividual,
+            }),
+          })
+
+          if (!response.ok) {
+            const result = await response.json()
+            console.error(`Error creating user ${user.email}:`, result.error)
+            continue
+          }
+
+          // Send invitation email
+          await fetch('/.netlify/functions/send-invitation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: user.email,
+              name: user.userName,
+              password,
+              loginUrl: `${appUrl}/login`,
+            }),
+          })
+
+          addedCount++
+        } else if (user.action === 'delete') {
+          // Find user by email
+          const existingUser = users.find((u) => u.email === user.email)
+          if (!existingUser) {
+            console.error(`User not found for deletion: ${user.email}`)
+            continue
+          }
+
+          // Prevent self-deletion
+          if (existingUser.id === currentUser?.id) {
+            console.error(`Cannot delete self: ${user.email}`)
+            continue
+          }
+
+          // Delete user via Netlify Function
+          const response = await fetch('/.netlify/functions/delete-user', {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ userId: existingUser.id }),
+          })
+
+          if (!response.ok) {
+            const result = await response.json()
+            console.error(`Error deleting user ${user.email}:`, result.error)
+            continue
+          }
+
+          deletedCount++
         }
-
-        // Create user
-        const password = generateRandomPassword()
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-          email: user.email,
-          password,
-          email_confirm: true,
-          user_metadata: {
-            name: user.userName,
-            role: 'trainee',
-          },
-        })
-
-        if (authError) {
-          console.error(`Error creating user ${user.email}:`, authError)
-          continue
-        }
-
-        // Update profile with group_id
-        if (groupId && authData.user) {
-          await supabase
-            .from('profiles')
-            .update({ group_id: groupId })
-            .eq('id', authData.user.id)
-        }
-
-        // Send invitation email
-        await fetch('/.netlify/functions/send-invitation', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: user.email,
-            name: user.userName,
-            password,
-            loginUrl: `${appUrl}/login`,
-          }),
-        })
-
-        successCount++
       }
 
-      setSuccessMessage(`${successCount}人のユーザーを登録し、招待メールを送信しました`)
+      // Build success message
+      const messages = []
+      if (addedCount > 0) messages.push(`${addedCount}人を追加`)
+      if (deletedCount > 0) messages.push(`${deletedCount}人を削除`)
+
+      setSuccessMessage(messages.join('、') + 'しました')
       setIsCsvModalOpen(false)
       fetchUsers()
       fetchGroups()
@@ -252,54 +547,91 @@ export function UsersPage() {
     {
       key: 'name',
       header: '名前',
-      render: (user: ProfileWithGroup) => (
+      sortable: true,
+      render: (user: ProfileWithRelations) => (
         <span className="font-medium">{user.name}</span>
       ),
     },
     {
-      key: 'role',
-      header: '権限',
-      render: (user: ProfileWithGroup) => (
-        <Badge variant={user.role === 'admin' ? 'primary' : 'default'}>
-          {user.role === 'admin' ? '管理者' : '研修生'}
-        </Badge>
+      key: 'email',
+      header: 'メールアドレス',
+      sortable: true,
+      render: (user: ProfileWithRelations) => (
+        <span className="text-text-light">{user.email || '-'}</span>
       ),
+    },
+    {
+      key: 'company',
+      header: '企業',
+      render: (user: ProfileWithRelations) => user.company?.name || '-',
+    },
+    {
+      key: 'department',
+      header: '部署',
+      render: (user: ProfileWithRelations) => user.department?.name || '-',
     },
     {
       key: 'group',
       header: 'グループ',
-      render: (user: ProfileWithGroup) => user.group?.name || '-',
+      render: (user: ProfileWithRelations) => user.group?.name || '-',
     },
     {
       key: 'actions',
       header: '',
-      className: 'w-24',
-      render: (user: ProfileWithGroup) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setSelectedUser(user)
-              setIsUserModalOpen(true)
-            }}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-            title="編集"
-          >
-            <PencilIcon className="w-4 h-4 text-text-light" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setSelectedUser(user)
-              setIsDeleteModalOpen(true)
-            }}
-            className="p-2 rounded-lg hover:bg-red-50 transition-colors"
-            title="削除"
-          >
-            <TrashIcon className="w-4 h-4 text-error" />
-          </button>
-        </div>
-      ),
+      className: 'w-32',
+      render: (user: ProfileWithRelations) => {
+        const isSelf = user.id === currentUser?.id
+        const canResetPassword = !isSelf && user.email
+        return (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setSelectedUser(user)
+                setIsUserModalOpen(true)
+              }}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              title="編集"
+            >
+              <PencilIcon className="w-4 h-4 text-text-light" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!canResetPassword) return
+                setSelectedUser(user)
+                setIsResetPasswordModalOpen(true)
+              }}
+              className={`p-2 rounded-lg transition-colors ${
+                canResetPassword
+                  ? 'hover:bg-amber-50'
+                  : 'opacity-30 cursor-not-allowed'
+              }`}
+              title={isSelf ? '自分自身はリセットできません' : !user.email ? 'メールアドレスが未設定' : 'パスワードリセット'}
+              disabled={!canResetPassword}
+            >
+              <KeyIcon className={`w-4 h-4 ${canResetPassword ? 'text-amber-600' : 'text-gray-400'}`} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (isSelf) return
+                setSelectedUser(user)
+                setIsDeleteModalOpen(true)
+              }}
+              className={`p-2 rounded-lg transition-colors ${
+                isSelf
+                  ? 'opacity-30 cursor-not-allowed'
+                  : 'hover:bg-red-50'
+              }`}
+              title={isSelf ? '自分自身は削除できません' : '削除'}
+              disabled={isSelf}
+            >
+              <TrashIcon className={`w-4 h-4 ${isSelf ? 'text-gray-400' : 'text-error'}`} />
+            </button>
+          </div>
+        )
+      },
     },
   ]
 
@@ -323,10 +655,15 @@ export function UsersPage() {
             leftIcon={<PlusIcon className="w-5 h-5" />}
             onClick={() => {
               setSelectedUser(null)
+              setAddingUserRole(
+                activeTab === 'super_admins' ? 'super_admin' :
+                activeTab === 'admins' ? 'admin' : 'trainee'
+              )
               setIsUserModalOpen(true)
             }}
           >
-            ユーザー追加
+            {activeTab === 'super_admins' ? 'マスター管理者追加' :
+             activeTab === 'admins' ? 'グループ管理者追加' : '研修生追加'}
           </Button>
         </div>
       </div>
@@ -343,14 +680,91 @@ export function UsersPage() {
         </Alert>
       )}
 
-      {/* Search */}
+      {/* Tabs */}
+      <div className="flex border-b border-border">
+        <button
+          onClick={() => setActiveTab('trainees')}
+          className={`flex items-center gap-2 px-4 py-3 font-medium border-b-2 transition-colors ${
+            activeTab === 'trainees'
+              ? 'text-blue-600 border-blue-600'
+              : 'text-text-light border-transparent hover:text-text'
+          }`}
+        >
+          <UsersIcon className="w-5 h-5" />
+          研修生
+          <Badge variant="primary" size="sm">
+            {users.filter(u => u.role === 'trainee').length}
+          </Badge>
+        </button>
+        <button
+          onClick={() => setActiveTab('admins')}
+          className={`flex items-center gap-2 px-4 py-3 font-medium border-b-2 transition-colors ${
+            activeTab === 'admins'
+              ? 'text-green-600 border-green-600'
+              : 'text-text-light border-transparent hover:text-text'
+          }`}
+        >
+          <ShieldCheckIcon className="w-5 h-5" />
+          グループ管理者
+          <Badge variant="success" size="sm">
+            {users.filter(u => u.role === 'group_admin').length}
+          </Badge>
+        </button>
+        <button
+          onClick={() => setActiveTab('super_admins')}
+          className={`flex items-center gap-2 px-4 py-3 font-medium border-b-2 transition-colors ${
+            activeTab === 'super_admins'
+              ? 'text-amber-600 border-amber-600'
+              : 'text-text-light border-transparent hover:text-text'
+          }`}
+        >
+          <ShieldCheckIcon className="w-5 h-5" />
+          マスター管理者
+          <Badge variant="warning" size="sm">
+            {users.filter(u => u.role === 'super_admin').length}
+          </Badge>
+        </button>
+      </div>
+
+      {/* Search and Filters */}
       <Card padding="sm">
-        <Input
-          placeholder="名前またはグループで検索..."
-          leftIcon={<MagnifyingGlassIcon className="w-5 h-5" />}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="flex-1">
+            <Input
+              placeholder="名前、メール、グループで検索..."
+              leftIcon={<MagnifyingGlassIcon className="w-5 h-5" />}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {/* Company filter */}
+            <select
+              value={filterCompanyId}
+              onChange={(e) => {
+                setFilterCompanyId(e.target.value)
+                setFilterGroupId('')
+              }}
+              className="px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">全企業</option>
+              {companies.map(company => (
+                <option key={company.id} value={company.id}>{company.name}</option>
+              ))}
+            </select>
+            {/* Group filter */}
+            <select
+              value={filterGroupId}
+              onChange={(e) => setFilterGroupId(e.target.value)}
+              className="px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">全グループ</option>
+              {filteredGroupsForFilter.map(group => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </Card>
 
       {/* Users table */}
@@ -365,6 +779,9 @@ export function UsersPage() {
           keyExtractor={(user) => user.id}
           isLoading={isLoading}
           emptyMessage="ユーザーが登録されていません"
+          sortField={sortField}
+          sortDirection={sortDirection}
+          onSort={handleSort}
         />
       </motion.div>
 
@@ -375,11 +792,20 @@ export function UsersPage() {
           setIsUserModalOpen(false)
           setSelectedUser(null)
         }}
-        title={selectedUser ? 'ユーザー編集' : 'ユーザー追加'}
+        title={selectedUser ? 'ユーザー編集' :
+          addingUserRole === 'super_admin' ? 'マスター管理者追加' :
+          addingUserRole === 'admin' ? 'グループ管理者追加' : '研修生追加'}
       >
         <UserForm
           user={selectedUser}
           groups={groups}
+          companies={companies}
+          departments={departments}
+          currentUserRole={currentUserRole}
+          defaultRole={
+            addingUserRole === 'super_admin' ? 'super_admin' :
+            addingUserRole === 'admin' ? 'group_admin' : 'trainee'
+          }
           onSubmit={selectedUser ? handleUpdateUser : handleCreateUser}
           onCancel={() => {
             setIsUserModalOpen(false)
@@ -427,6 +853,44 @@ export function UsersPage() {
           </Button>
           <Button variant="danger" onClick={handleDeleteUser}>
             削除する
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Password reset confirmation modal */}
+      <Modal
+        isOpen={isResetPasswordModalOpen}
+        onClose={() => {
+          if (!isResettingPassword) {
+            setIsResetPasswordModalOpen(false)
+            setSelectedUser(null)
+          }
+        }}
+        title="パスワードリセットの確認"
+        size="md"
+      >
+        <p className="text-text">
+          <span className="font-semibold">{selectedUser?.name}</span> のパスワードをリセットしますか？
+        </p>
+        <p className="text-text-light text-sm mt-2">
+          新しいパスワードが生成され、ユーザーにメールで通知されます。<br></br>ユーザーは次回ログイン時にパスワード変更が必要になります。
+        </p>
+        <ModalFooter>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setIsResetPasswordModalOpen(false)
+              setSelectedUser(null)
+            }}
+            disabled={isResettingPassword}
+          >
+            キャンセル
+          </Button>
+          <Button
+            onClick={handleResetPassword}
+            isLoading={isResettingPassword}
+          >
+            リセットする
           </Button>
         </ModalFooter>
       </Modal>

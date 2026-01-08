@@ -29,7 +29,7 @@ export function truncate(text: string, length: number): string {
   return text.slice(0, length) + '...'
 }
 
-// Parse CSV content
+// Parse CSV content with proper quote handling
 export function parseCSV(content: string): string[][] {
   const lines = content.trim().split('\n')
   return lines.map(line => {
@@ -39,8 +39,16 @@ export function parseCSV(content: string): string[][] {
 
     for (let i = 0; i < line.length; i++) {
       const char = line[i]
+      const nextChar = line[i + 1]
+
       if (char === '"') {
-        inQuotes = !inQuotes
+        // Handle escaped double quotes ("")
+        if (inQuotes && nextChar === '"') {
+          current += '"'
+          i++ // Skip the next quote
+        } else {
+          inQuotes = !inQuotes
+        }
       } else if (char === ',' && !inQuotes) {
         result.push(current.trim())
         current = ''

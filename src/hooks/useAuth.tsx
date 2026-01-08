@@ -81,24 +81,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Sign in
   const signIn = async (email: string, password: string) => {
-    console.log('[Auth] Starting signIn...')
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
 
-    console.log('[Auth] signInWithPassword result:', { data, error })
-
     if (error) {
-      console.error('[Auth] Sign in error:', error)
       return { error: error.message, role: null }
     }
 
     // Fetch profile to get role
     if (data.user) {
-      console.log('[Auth] Fetching profile for user:', data.user.id)
       const profileData = await fetchProfile(data.user.id)
-      console.log('[Auth] Profile data:', profileData)
       setProfile(profileData)
       setUser(data.user)
       setSession(data.session)
@@ -129,11 +123,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null }
   }
 
+  // Consider loading until both session check is done AND profile is loaded (if authenticated)
+  const isFullyLoaded = !isLoading && (!session || profile !== null)
+
   const value: AuthContextType = {
     user,
     profile,
     session,
-    isLoading,
+    isLoading: !isFullyLoaded,
     isAuthenticated: !!session,
     role: profile?.role ?? null,
     signIn,

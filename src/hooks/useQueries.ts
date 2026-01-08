@@ -97,29 +97,27 @@ export function useCreateUser() {
       role: 'admin' | 'trainee'
       group_id?: string
     }) => {
-      // Create auth user
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: user.email,
-        password: user.password,
-        email_confirm: true,
+      // Get current session for authorization
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
+
+      // Call Netlify Function to create user (uses Service Role Key server-side)
+      const response = await fetch('/.netlify/functions/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(user),
       })
 
-      if (authError) throw authError
+      const result = await response.json()
 
-      // Create profile
-      const { data, error } = await supabase
-        .from('profiles')
-        .insert({
-          id: authData.user.id,
-          name: user.name,
-          role: user.role,
-          group_id: user.group_id || null,
-        })
-        .select()
-        .single()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create user')
+      }
 
-      if (error) throw error
-      return data
+      return result.profile
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.users })

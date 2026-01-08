@@ -7,8 +7,7 @@ import {
   BookOpenIcon,
   ChartBarIcon,
   XMarkIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
+  Bars3BottomLeftIcon,
 } from '@heroicons/react/24/outline'
 
 interface SidebarProps {
@@ -52,7 +51,7 @@ export function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }: Side
           ${isCollapsed ? 'md:w-16' : 'w-64'}
         `}
       >
-        {/* Header with logo */}
+        {/* Header with logo and collapse button */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-border">
           <div className={`flex items-center gap-2 ${isCollapsed ? 'md:justify-center md:w-full' : ''}`}>
             <img src="/favicon.svg" alt="AF" className="w-8 h-8 flex-shrink-0" />
@@ -60,13 +59,33 @@ export function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }: Side
               管理画面
             </span>
           </div>
+
+          {/* Mobile: Close button / Desktop: Collapse button */}
           <button
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors md:hidden"
           >
-            <XMarkIcon className="w-6 h-6 text-text" />
+            <XMarkIcon className="w-5 h-5 text-text-light" />
+          </button>
+          <button
+            onClick={onToggleCollapse}
+            className={`hidden md:flex p-2 rounded-lg hover:bg-gray-100 transition-colors ${isCollapsed ? 'md:hidden' : ''}`}
+            title="メニューを折りたたむ"
+          >
+            <Bars3BottomLeftIcon className="w-5 h-5 text-text-light" />
           </button>
         </div>
+
+        {/* Expand button when collapsed (inside header area) */}
+        {isCollapsed && (
+          <button
+            onClick={onToggleCollapse}
+            className="hidden md:flex w-full justify-center py-3 hover:bg-gray-50 transition-colors border-b border-border"
+            title="メニューを展開"
+          >
+            <Bars3BottomLeftIcon className="w-5 h-5 text-text-light" />
+          </button>
+        )}
 
         {/* Navigation */}
         <nav className={`p-4 space-y-1 ${isCollapsed ? 'md:p-2' : ''}`}>
@@ -93,19 +112,6 @@ export function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }: Side
             </NavLink>
           ))}
         </nav>
-
-        {/* Collapse toggle button (desktop only) */}
-        <button
-          onClick={onToggleCollapse}
-          className="hidden md:flex absolute bottom-16 left-0 right-0 mx-auto w-8 h-8 items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
-          title={isCollapsed ? 'メニューを展開' : 'メニューを折りたたむ'}
-        >
-          {isCollapsed ? (
-            <ChevronRightIcon className="w-4 h-4 text-text" />
-          ) : (
-            <ChevronLeftIcon className="w-4 h-4 text-text" />
-          )}
-        </button>
 
         {/* Footer */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border">

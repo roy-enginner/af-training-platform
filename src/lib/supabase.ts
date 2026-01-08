@@ -1,16 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+// Support both new (publishable) and legacy (anon) key naming
+const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase credentials not found. Please check your .env file.')
+if (!supabaseUrl || !supabasePublishableKey) {
+  throw new Error('Missing Supabase credentials. Please check your .env file.')
 }
 
-export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-key'
-)
+export const supabase = createClient(supabaseUrl, supabasePublishableKey)
 
 // Helper function to generate random password
 export function generateRandomPassword(length: number = 16): string {

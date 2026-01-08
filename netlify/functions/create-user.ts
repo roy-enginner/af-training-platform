@@ -1,17 +1,6 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL!
-// Auth Admin API requires legacy service_role JWT key (new secret key doesn't support admin operations)
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-})
-
 interface CreateUserRequest {
   email: string
   password: string
@@ -21,6 +10,33 @@ interface CreateUserRequest {
 }
 
 const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
+  // Debug: Log environment variables availability
+  console.log('ENV CHECK:', {
+    hasUrl: !!process.env.VITE_SUPABASE_URL,
+    hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    serviceKeyPrefix: process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 20),
+  })
+
+  // Create Supabase admin client inside handler to ensure env vars are available
+  const supabaseUrl = process.env.VITE_SUPABASE_URL!
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('Missing environment variables')
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Server configuration error' }),
+    }
+  }
+
+  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+
   // CORS headers
   const headers = {
     'Access-Control-Allow-Origin': '*',

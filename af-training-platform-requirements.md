@@ -1,16 +1,17 @@
 # AI研修プラットフォーム要件定義書
 
-**プロジェクト名**: af-training-platform  
-**ドメイン**: assist-frontier.site  
-**作成日**: 2026/01/07  
-**ステータス**: 要件確定
+**プロジェクト名**: af-training-platform
+**ドメイン**: assist-frontier.site
+**作成日**: 2026/01/07
+**最終更新日**: 2026/01/09
+**ステータス**: 実装中
 
 ---
 
 ## 1. プロジェクト概要
 
 ### 1.1 目的
-Assist FrontierのAI研修サービス用プラットフォーム。企業向けにAI活用研修を提供し、研修生がハンズオン形式で主要GAI（ChatGPT, Gemini, Claude）を体験できる環境を構築する。
+Assist FrontierのAI研修サービス用プラットフォーム。企業向け・個人向けにAI活用研修を提供し、研修生がハンズオン形式で主要GAI（ChatGPT, Gemini, Claude）を体験できる環境を構築する。
 
 ### 1.2 主要機能
 - 管理者によるカリキュラム自動生成（Claude API使用）
@@ -18,11 +19,14 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - 進捗管理・分析ダッシュボード
 - API利用量制限（日次トークン数ベース）
 - カリキュラムPDF出力
+- **企業・部署・グループの階層管理**
+- **個人ユーザー対応**
+- **柔軟な属性管理（役職・スキル等）**
 
 ### 1.3 想定規模（ローンチ時）
 | 項目 | 数値 |
 |------|------|
-| 企業グループ数 | 約5社 |
+| 企業数 | 約5社 |
 | 研修生数 | 約500名 |
 | 同時接続数 | 最大50名 |
 
@@ -45,7 +49,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 ### 2.2 バックエンド・インフラ
 | カテゴリ | 技術 | 備考 |
 |---------|------|------|
-| ホスティング | Netlify | Functions対応 |
+| ホスティング | Netlify | Functions + Scheduled Functions |
 | データベース | Supabase (PostgreSQL) | 認証・Storage含む |
 | 認証 | Supabase Auth | 招待メール機能内蔵 |
 | メール送信 | Resend | 3,000通/月無料枠 |
@@ -83,54 +87,103 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 
 ## 3. ユーザー権限・階層構造
 
-### 3.1 ユーザー階層
+### 3.1 組織階層（実装済み）
 ```
-管理者（Assist Frontier）
-├── 企業グループA
-│   ├── 研修生1
-│   ├── 研修生2
-│   └── 研修生3
-├── 企業グループB
-│   └── ...
-└── 企業グループC
+企業（Company）
+├── 部署A（Department）※階層構造対応（入れ子可能）
+│   ├── グループ1（Group）
+│   │   ├── 研修生1（Trainee）
+│   │   └── 研修生2
+│   └── グループ2
+│       └── ...
+├── 部署B
+│   └── グループ3
+│       └── ...
+└── 直下のグループ（部署なし）
     └── ...
+
+個人ユーザー（is_individual = true）
+├── 個人研修生A（企業・グループに属さない）
+└── 個人研修生B
 ```
 
-### 3.2 権限マトリクス
-| 機能 | 管理者 | 研修生 |
-|------|--------|--------|
-| ユーザー管理（CRUD） | ✅ | ❌ |
-| 企業グループ管理 | ✅ | ❌ |
-| カリキュラム作成・編集 | ✅ | ❌ |
-| カリキュラム閲覧 | ✅（全て） | ✅（割当分のみ） |
-| チャット利用 | ✅ | ✅（割当枠内） |
-| API利用状況確認 | ✅（全体） | ✅（自分のみ） |
-| 進捗管理 | ✅（全体） | ✅（自分のみ） |
-| PDF出力 | ✅ | ✅（割当カリキュラム） |
+### 3.2 ユーザーロール（実装済み）
+| ロール | 説明 |
+|--------|------|
+| `super_admin` | スーパー管理者（Assist Frontier）- 全機能アクセス可 |
+| `group_admin` | グループ管理者（企業担当者）- 自グループのユーザー管理のみ |
+| `trainee` | 研修生 - 学習機能のみ |
+
+### 3.3 権限マトリクス（実装済み）
+| 機能 | super_admin | group_admin | trainee |
+|------|-------------|-------------|---------|
+| 企業管理 | ✅ | ❌ | ❌ |
+| 部署管理 | ✅ | ❌ | ❌ |
+| グループ管理 | ✅ | ❌ | ❌ |
+| 全ユーザー管理 | ✅ | ❌ | ❌ |
+| 自グループユーザー管理 | ✅ | ✅ | ❌ |
+| 管理者ロール付与 | ✅ | ❌ | ❌ |
+| カリキュラム管理 | ✅ | ❌ | ❌ |
+| 属性定義管理 | ✅ | ❌ | ❌ |
+| 全レポート閲覧 | ✅ | ❌ | ❌ |
+| カリキュラム閲覧 | ✅（全て） | ✅（割当分） | ✅（割当分のみ） |
+| チャット利用 | ✅ | ✅ | ✅（割当枠内） |
+| 進捗確認 | ✅（全体） | ✅（自グループ） | ✅（自分のみ） |
 
 ---
 
 ## 4. 機能詳細
 
-### 4.1 認証・ユーザー管理
+### 4.1 認証・ユーザー管理（実装済み）
 
 #### 登録フロー
-1. 管理者がCSV（グループ名、ユーザー名、メールアドレス）をアップロード
+1. 管理者がCSV（アクション、グループ名、ユーザー名、メールアドレス）をアップロード
 2. システムが自動で初期パスワード（ランダム生成）を発行
-3. 招待メールを各研修生に送信
-4. 研修生がログイン後、パスワードを変更
+3. 招待メールを各研修生に送信（Resend使用）
+4. 研修生がログイン後、パスワードを強制変更
+
+#### CSV機能（実装済み）
+- **テンプレートダウンロード機能**
+- **追加（add）・削除（delete）アクション対応**
+- フォーマット: `アクション,グループ名,ユーザー名,メールアドレス`
 
 #### パスワードポリシー（NIST SP 800-63B準拠）
 - 最小12文字以上
 - 漏洩パスワードリストとの照合
 - 連続した文字・数字の禁止
 - ユーザー情報との類似禁止
+- **初回ログイン時のパスワード強制変更**
 
-#### 将来実装予定（現段階では不要）
+#### 将来実装予定
 - 二要素認証（MFA）
 - IPアドレス制限
 
-### 4.2 カリキュラム管理
+### 4.2 アクセス制御（実装済み）
+
+#### 契約期間ベースのアクセス制御
+- **企業単位**: `contract_start_date` 〜 `contract_end_date`
+- **グループ単位**: `start_date` 〜 `end_date`
+- **個人ユーザー**: `start_date` 〜 `end_date`（プロファイルに直接設定）
+
+#### 研修日ベースのアクセス制御
+- **グループ研修日**: `group_training_dates` テーブルで複数日設定可能
+- **個人研修日**: `individual_training_dates` テーブル
+- **復習期間**: 研修実施日から `review_period_days`（デフォルト14日）はアクセス許可
+
+#### アクセス判定ロジック
+```
+アクセス許可 = 以下のいずれかを満たす場合
+1. 管理者ロール（super_admin / group_admin）
+2. 契約期間内（start_date <= 今日 <= end_date）
+3. 研修日 + 復習期間内（研修日 <= 今日 <= 研修日 + review_period_days）
+```
+
+#### 自動削除機能（実装済み）
+- **契約終了後30日経過で自動削除**
+- Netlify Scheduled Functions で毎日 3:00 AM JST に実行
+- 削除対象: traineeユーザーのみ（管理者は対象外）
+
+### 4.3 カリキュラム管理
 
 #### 自動生成フロー
 1. 管理者が「研修ゴール」を入力（例：自分専用のAIエージェントを作る）
@@ -150,21 +203,13 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 └── チャプターN
 ```
 
-#### チャプター完了条件
-- コンテンツ閲覧完了
-- 課題終了チェックボックスにチェック
-- ※実際の成果は問わない（自己申告制）
+#### 割当単位（実装済みDB構造）
+- **企業単位**: 企業全体に一括割当
+- **部署単位**: 特定部署に割当
+- **グループ単位**: 特定グループに割当
+- **個人単位**: 個別ユーザーに直接割当
 
-#### バージョン管理
-- 受講開始時点のバージョンで固定
-- 新規受講者は最新バージョンを使用
-
-#### 割当単位
-- 企業グループ単位での一括割当
-- 研修生個別での割当
-- 両方に対応
-
-### 4.3 チャット機能
+### 4.4 チャット機能
 
 #### 実装方式
 - フルスクラッチ（Netlify Functions + 各AI API直接連携）
@@ -178,10 +223,24 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 
 #### 制限管理
 - 研修生ごとの日次トークン数制限
-- 企業グループごとの日次トークン数制限
+- 企業/グループごとの日次トークン数制限
 - 制限到達時のユーザーへの表示メッセージ
 
-### 4.4 進捗管理・分析ダッシュボード
+### 4.5 ユーザー属性管理（実装済みDB構造）
+
+#### 柔軟な属性システム
+- **属性定義マスタ**: `attribute_definitions` テーブル
+- **ユーザー属性**: `user_attributes` テーブル（Key-Value形式）
+
+#### デフォルト属性
+| キー | ラベル | タイプ | 選択肢 |
+|------|--------|--------|--------|
+| position | 役職 | select | 部長, 課長, 係長, 主任, 一般 |
+| department_role | 部署内役割 | text | - |
+| skill_level | AIスキルレベル | select | 初級, 中級, 上級 |
+| tags | タグ | text | - |
+
+### 4.6 進捗管理・分析ダッシュボード
 
 #### 研修生向け
 - 自分の進捗状況表示
@@ -195,7 +254,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - チャット利用統計（質問傾向等）
 - 研修完了率・離脱率分析
 
-### 4.5 通知機能
+### 4.7 通知機能
 
 #### リマインド通知（メール）
 - 日次で未完了チャプターをリマインド
@@ -206,7 +265,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - メール
 - Microsoft Teams
 
-### 4.6 PDF出力
+### 4.8 PDF出力
 
 #### 出力対象
 - カリキュラム内容（テキスト部分のみ）
@@ -215,7 +274,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 #### 用途
 - 集合研修での印刷配布用
 
-### 4.7 決済連携（Square）
+### 4.9 決済連携（Square）
 
 #### 実装範囲（半自動連携）
 - 管理画面からSquare請求書を発行
@@ -223,54 +282,323 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 
 ---
 
-## 5. アクセス期限・データ管理
+## 5. データベース設計（Supabase）- 実装済み
 
-### 5.1 研修期間設定
-- 管理者が企業/研修生ごとに設定可能
+### 5.1 組織階層テーブル
 
-### 5.2 アクセス期限
-- 研修終了後14日間アクセス可能（日数はカスタマイズ可能）
-- 期限切れ後はデータ削除
+#### companies（企業）
+```sql
+- id: uuid (PK)
+- name: text
+- contract_start_date: date (nullable)
+- contract_end_date: date (nullable)
+- is_active: boolean (default: true)
+- daily_token_limit: integer (default: 100000)
+- notes: text (nullable)
+- created_at: timestamptz
+- updated_at: timestamptz
+```
+
+#### departments（部署）
+```sql
+- id: uuid (PK)
+- company_id: uuid (FK -> companies.id)
+- parent_department_id: uuid (FK -> departments.id, nullable) -- 階層構造
+- name: text
+- sort_order: integer (default: 0)
+- is_active: boolean (default: true)
+- created_at: timestamptz
+- updated_at: timestamptz
+```
+
+#### groups（研修グループ）
+```sql
+- id: uuid (PK)
+- name: text
+- company_id: uuid (FK -> companies.id, nullable)
+- department_id: uuid (FK -> departments.id, nullable)
+- daily_token_limit: integer (default: 100000)
+- start_date: date (nullable)
+- end_date: date (nullable)
+- review_period_days: integer (default: 14)
+- is_active: boolean (default: true)
+- created_at: timestamptz
+- updated_at: timestamptz
+```
+
+### 5.2 ユーザーテーブル
+
+#### profiles（ユーザープロファイル）
+```sql
+- id: uuid (PK, FK -> auth.users.id)
+- email: text
+- name: text
+- role: enum ('super_admin', 'group_admin', 'trainee')
+- company_id: uuid (FK -> companies.id, nullable)
+- department_id: uuid (FK -> departments.id, nullable)
+- group_id: uuid (FK -> groups.id, nullable)
+- is_individual: boolean (default: false) -- 個人ユーザーフラグ
+- start_date: date (nullable) -- 個人の契約開始日
+- end_date: date (nullable) -- 個人の契約終了日
+- review_period_days: integer (default: 14)
+- notification_enabled: boolean (default: true)
+- notification_forced: boolean (default: false)
+- must_change_password: boolean (default: true)
+- access_expires_at: timestamptz (nullable)
+- created_at: timestamptz
+- updated_at: timestamptz
+```
+
+#### user_attributes（ユーザー属性）
+```sql
+- id: uuid (PK)
+- profile_id: uuid (FK -> profiles.id)
+- attribute_key: text
+- attribute_value: text
+- created_at: timestamptz
+- UNIQUE(profile_id, attribute_key)
+```
+
+#### attribute_definitions（属性定義マスタ）
+```sql
+- id: uuid (PK)
+- key: text (UNIQUE)
+- label: text
+- attribute_type: text ('text', 'select', 'number', 'date')
+- options: jsonb (nullable) -- selectの場合の選択肢
+- sort_order: integer (default: 0)
+- is_active: boolean (default: true)
+- created_at: timestamptz
+```
+
+### 5.3 研修日テーブル
+
+#### group_training_dates（グループ研修日）
+```sql
+- id: uuid (PK)
+- group_id: uuid (FK -> groups.id)
+- training_date: date
+- description: text (nullable)
+- created_at: timestamptz
+```
+
+#### individual_training_dates（個人研修日）
+```sql
+- id: uuid (PK)
+- profile_id: uuid (FK -> profiles.id)
+- training_date: date
+- description: text (nullable)
+- created_at: timestamptz
+```
+
+### 5.4 カリキュラムテーブル
+
+#### curricula（カリキュラム）
+```sql
+- id: uuid (PK)
+- name: text
+- description: text (nullable)
+- content_type: enum ('document', 'video', 'quiz', 'external')
+- content_url: text (nullable)
+- duration_minutes: integer (nullable)
+- difficulty_level: enum ('beginner', 'intermediate', 'advanced')
+- tags: text[] (nullable)
+- sort_order: integer (default: 0)
+- is_active: boolean (default: true)
+- created_at: timestamptz
+- updated_at: timestamptz
+```
+
+#### curriculum_assignments（カリキュラム割当）
+```sql
+- id: uuid (PK)
+- curriculum_id: uuid (FK -> curricula.id)
+- target_type: enum ('company', 'department', 'group', 'individual')
+- target_id: uuid -- 対象のID
+- due_date: date (nullable)
+- is_required: boolean (default: true)
+- assigned_by: uuid (FK -> profiles.id, nullable)
+- assigned_at: timestamptz
+- UNIQUE(curriculum_id, target_type, target_id)
+```
+
+#### curriculum_progress（カリキュラム進捗）
+```sql
+- id: uuid (PK)
+- profile_id: uuid (FK -> profiles.id)
+- curriculum_id: uuid (FK -> curricula.id)
+- status: enum ('not_started', 'in_progress', 'completed')
+- progress_percent: integer (default: 0)
+- started_at: timestamptz (nullable)
+- completed_at: timestamptz (nullable)
+- score: integer (nullable)
+- notes: text (nullable)
+- updated_at: timestamptz
+- UNIQUE(profile_id, curriculum_id)
+```
+
+### 5.5 チャット関連テーブル（未実装）
+
+#### chat_sessions（チャットセッション）
+```sql
+- id: uuid (PK)
+- user_id: uuid (FK -> profiles.id)
+- chapter_id: uuid (FK -> chapters.id, nullable)
+- model: text
+- created_at: timestamptz
+```
+
+#### chat_messages（チャットメッセージ）
+```sql
+- id: uuid (PK)
+- session_id: uuid (FK -> chat_sessions.id)
+- role: enum ('user', 'assistant')
+- content: text
+- token_count: integer
+- created_at: timestamptz
+```
+
+#### token_usage（トークン使用量）
+```sql
+- id: uuid (PK)
+- user_id: uuid (FK -> profiles.id)
+- group_id: uuid (FK -> groups.id)
+- date: date
+- input_tokens: integer
+- output_tokens: integer
+- model: text
+- created_at: timestamptz
+```
 
 ---
 
-## 6. エラーハンドリング
+## 6. Netlify Functions（実装済み）
 
-### 6.1 API呼び出し
+### 6.1 ユーザー管理Functions
+
+| Function | メソッド | 用途 |
+|----------|----------|------|
+| `create-user` | POST | ユーザー作成（管理者のみ） |
+| `delete-user` | DELETE | ユーザー削除（管理者のみ） |
+| `reset-user-password` | POST | パスワードリセット（管理者のみ） |
+| `send-invitation` | POST | 招待メール送信 |
+
+### 6.2 スケジュールFunctions
+
+| Function | スケジュール | 用途 |
+|----------|-------------|------|
+| `cleanup-expired` | 毎日 18:00 UTC (3:00 JST) | 期限切れユーザー・グループの自動削除 |
+
+### 6.3 カリキュラムFunctions
+
+| Function | メソッド | 用途 |
+|----------|----------|------|
+| `generate-curriculum` | POST | Claude APIでカリキュラム自動生成（管理者のみ） |
+
+---
+
+## 7. 実装フェーズ計画
+
+### Phase 1: 基盤構築（MVP）✅ 完了
+- [x] Netlifyプロジェクトセットアップ
+- [x] Supabase環境構築（DB、Auth）
+- [x] 認証機能（ログイン、パスワード変更）
+- [x] 管理画面基本UI
+- [x] ユーザー管理（CSV一括登録・削除対応）
+- [x] グループ管理（契約期間、研修日、復習期間）
+- [x] ロール制御（super_admin / group_admin / trainee）
+- [x] アクセス制御（期間ベース）
+- [x] 自動削除機能（30日後）
+
+### Phase 1.5: 組織階層拡張 ✅ 完了
+- [x] 企業テーブル追加
+- [x] 部署テーブル追加（階層構造対応）
+- [x] ユーザー属性テーブル追加
+- [x] 個人ユーザー対応
+- [x] カリキュラムテーブル追加
+- [x] 企業管理UI
+- [x] 部署管理UI
+- [x] ユーザー属性管理UI
+
+### Phase 2: カリキュラム機能 ✅ 完了
+- [x] カリキュラム自動生成（Claude Sonnet 4.5 API連携）
+- [x] カリキュラム編集UI（作成・編集・削除・検索・フィルター）
+- [x] カリキュラム割当機能（企業/部署/グループ/個人）
+- [x] チャプター管理UI（作成・編集・削除・並べ替え）
+- [x] カリキュラム詳細ページ
+- [ ] バージョン管理
+
+### Phase 3: 受講者向け機能 ✅ 完了
+- [x] 受講者ダッシュボード（統計・割当カリキュラム表示）
+- [x] カリキュラム一覧ページ（フィルター・検索機能付き）
+- [x] カリキュラム学習ページ（チャプター別学習）
+- [x] 進捗管理機能（自動保存・完了ステータス管理）
+
+### Phase 4: AIチャット機能
+- [ ] チャットUI実装
+- [ ] AI API連携（OpenAI, Anthropic, Google）
+- [ ] 会話履歴保存
+- [ ] トークン使用量計測・制限
+
+### Phase 5: レポート・分析機能
+- [ ] 管理者ダッシュボード強化
+- [ ] 分析レポート
+- [ ] 進捗レポートエクスポート
+
+### Phase 6: 通知・連携機能
+- [ ] メール通知（Resend）
+- [ ] リマインド機能
+- [ ] Teams通知
+- [ ] Square連携
+- [ ] PDF出力
+
+### Phase 7: 最適化・拡張
+- [ ] パフォーマンス最適化
+- [ ] MFA実装準備
+- [ ] IPアドレス制限準備
+- [ ] スケーラビリティ対応
+
+---
+
+## 8. エラーハンドリング
+
+### 8.1 API呼び出し
 - 失敗時のリトライ処理（指数バックオフ）
 - タイムアウト設定
 
-### 6.2 トークン制限
+### 8.2 トークン制限
 - 制限到達時のユーザーへのわかりやすいメッセージ表示
 - 残量表示
 
-### 6.3 システム障害
+### 8.3 システム障害
 - 管理者通知（メール & Teams）
 
 ---
 
-## 7. セキュリティ要件
+## 9. セキュリティ要件
 
-### 7.1 現段階で実装
+### 9.1 実装済み
 - Supabase Auth による認証
 - Row Level Security (RLS) による権限制御
 - HTTPS通信
 - APIキーの環境変数管理
 - 最新のパスワードポリシー
+- 初回ログイン時パスワード強制変更
+- ロールベースアクセス制御
 
-### 7.2 将来実装可能な設計
+### 9.2 将来実装予定
 - 二要素認証（MFA）
 - IPアドレス制限
 
 ---
 
-## 8. デザインシステム
+## 10. デザインシステム
 
-### 8.1 基本方針
+### 10.1 基本方針
 - DESIGN_SYSTEM.md（Assist Frontier標準）をベースに使用
 - 研修用途に最適化したUI/UXを適用
 
-### 8.2 カラーパレット
+### 10.2 カラーパレット
 ```css
 --color-primary: #0088CC;       /* メインカラー（青） */
 --color-primary-dark: #005A8C;  /* ホバー時 */
@@ -281,168 +609,10 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 --color-text-light: #64748B;    /* 補助テキスト */
 ```
 
-### 8.3 フォント
+### 10.3 フォント
 ```css
 --font-sans: "M PLUS 1p", "Hiragino Sans", sans-serif;
 ```
-
----
-
-## 9. データベース設計（Supabase）
-
-### 9.1 主要テーブル
-
-#### users
-```sql
-- id: uuid (PK)
-- email: text (UNIQUE)
-- name: text
-- role: enum ('admin', 'trainee')
-- group_id: uuid (FK -> groups.id, nullable)
-- created_at: timestamp
-- updated_at: timestamp
-- access_expires_at: timestamp (nullable)
-- notification_enabled: boolean
-- notification_forced: boolean
-```
-
-#### groups（企業グループ）
-```sql
-- id: uuid (PK)
-- name: text
-- daily_token_limit: integer
-- created_at: timestamp
-- updated_at: timestamp
-```
-
-#### curricula（カリキュラム）
-```sql
-- id: uuid (PK)
-- title: text
-- goal: text
-- version: integer
-- status: enum ('draft', 'published', 'archived')
-- created_by: uuid (FK -> users.id)
-- created_at: timestamp
-- updated_at: timestamp
-```
-
-#### chapters（チャプター）
-```sql
-- id: uuid (PK)
-- curriculum_id: uuid (FK -> curricula.id)
-- order_index: integer
-- title: text
-- content: text (学習コンテンツ)
-- task_description: text (ハンズオン課題)
-- estimated_minutes: integer (default: 5)
-- created_at: timestamp
-- updated_at: timestamp
-```
-
-#### curriculum_assignments（カリキュラム割当）
-```sql
-- id: uuid (PK)
-- curriculum_id: uuid (FK -> curricula.id)
-- curriculum_version: integer
-- assignee_type: enum ('group', 'user')
-- assignee_id: uuid
-- assigned_at: timestamp
-- expires_at: timestamp
-```
-
-#### progress（進捗）
-```sql
-- id: uuid (PK)
-- user_id: uuid (FK -> users.id)
-- chapter_id: uuid (FK -> chapters.id)
-- completed: boolean
-- completed_at: timestamp (nullable)
-- created_at: timestamp
-```
-
-#### chat_sessions（チャットセッション）
-```sql
-- id: uuid (PK)
-- user_id: uuid (FK -> users.id)
-- chapter_id: uuid (FK -> chapters.id, nullable)
-- model: text
-- created_at: timestamp
-```
-
-#### chat_messages（チャットメッセージ）
-```sql
-- id: uuid (PK)
-- session_id: uuid (FK -> chat_sessions.id)
-- role: enum ('user', 'assistant')
-- content: text
-- token_count: integer
-- created_at: timestamp
-```
-
-#### token_usage（トークン使用量）
-```sql
-- id: uuid (PK)
-- user_id: uuid (FK -> users.id)
-- group_id: uuid (FK -> groups.id)
-- date: date
-- input_tokens: integer
-- output_tokens: integer
-- model: text
-- created_at: timestamp
-```
-
-#### api_settings（API設定）
-```sql
-- id: uuid (PK)
-- provider: enum ('openai', 'anthropic', 'google')
-- api_key_encrypted: text
-- enabled: boolean
-- created_at: timestamp
-- updated_at: timestamp
-```
-
----
-
-## 10. 実装フェーズ計画
-
-### Phase 1: 基盤構築（MVP）
-- [ ] Netlifyプロジェクトセットアップ
-- [ ] Supabase環境構築（DB、Auth）
-- [ ] 認証機能（ログイン、パスワード変更）
-- [ ] 管理画面基本UI
-- [ ] ユーザー管理（CSV一括登録）
-
-### Phase 2: カリキュラム機能
-- [ ] カリキュラム自動生成（Claude API連携）
-- [ ] カリキュラム編集UI
-- [ ] チャプター管理
-- [ ] カリキュラム割当機能
-- [ ] バージョン管理
-
-### Phase 3: チャット機能
-- [ ] チャットUI実装
-- [ ] AI API連携（OpenAI, Anthropic, Google）
-- [ ] 会話履歴保存
-- [ ] トークン使用量計測・制限
-
-### Phase 4: 進捗管理・分析
-- [ ] 進捗トラッキング
-- [ ] 管理者ダッシュボード
-- [ ] 分析レポート
-
-### Phase 5: 通知・連携機能
-- [ ] メール通知（Resend）
-- [ ] リマインド機能
-- [ ] Teams通知
-- [ ] Square連携
-- [ ] PDF出力
-
-### Phase 6: 最適化・拡張
-- [ ] パフォーマンス最適化
-- [ ] MFA実装準備
-- [ ] IPアドレス制限準備
-- [ ] スケーラビリティ対応
 
 ---
 
@@ -475,6 +645,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - SaaS化を見据えた設計
 - Square課金連携の完全自動化
 - 複数企業向けマルチテナント対応
+- **個人向けサービス展開**
 
 ---
 
@@ -483,3 +654,18 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 | 日付 | 内容 |
 |------|------|
 | 2026/01/07 | 初版作成 |
+| 2026/01/08 | ロール制御（super_admin/group_admin/trainee）実装反映 |
+| 2026/01/08 | グループ管理（契約期間、研修日、復習期間）実装反映 |
+| 2026/01/08 | アクセス制御（期間ベース）実装反映 |
+| 2026/01/08 | CSV機能強化（テンプレートDL、削除対応）実装反映 |
+| 2026/01/08 | 自動削除機能（30日後）実装反映 |
+| 2026/01/08 | 企業・部署・ユーザー属性・カリキュラムDB構造追加 |
+| 2026/01/08 | 個人ユーザー対応追加 |
+| 2026/01/08 | 企業管理UI・部署管理UI実装完了 |
+| 2026/01/08 | カリキュラム管理UI実装（一覧・作成・編集・削除・検索・フィルター） |
+| 2026/01/08 | カリキュラム自動生成機能実装（Claude Sonnet 4.5 API連携） |
+| 2026/01/08 | カリキュラム割当機能実装（企業/部署/グループ/個人単位） |
+| 2026/01/09 | ユーザー属性管理UI実装完了 |
+| 2026/01/09 | チャプター管理UI実装（作成・編集・削除・並べ替え） |
+| 2026/01/09 | カリキュラム詳細ページ実装 |
+| 2026/01/09 | 受講者向け機能実装（ダッシュボード、カリキュラム一覧、学習ページ、進捗管理） |

@@ -8,14 +8,23 @@ import { TraineeLayout } from '@/components/layout/TraineeLayout'
 // Auth Pages
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { ChangePasswordPage } from '@/pages/auth/ChangePasswordPage'
+import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
+import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
 
 // Admin Pages
 import { AdminDashboardPage } from '@/pages/admin/DashboardPage'
 import { UsersPage } from '@/pages/admin/UsersPage'
 import { GroupsPage } from '@/pages/admin/GroupsPage'
+import { CompaniesPage } from '@/pages/admin/CompaniesPage'
+import { DepartmentsPage } from '@/pages/admin/DepartmentsPage'
+import { CurriculaPage } from '@/pages/admin/CurriculaPage'
+import { CurriculumDetailPage } from '@/pages/admin/CurriculumDetailPage'
+import { AttributesPage } from '@/pages/admin/AttributesPage'
 
 // Trainee Pages
 import { TraineeDashboardPage } from '@/pages/trainee/DashboardPage'
+import { TraineeCurriculaPage } from '@/pages/trainee/CurriculaPage'
+import { CurriculumLearningPage } from '@/pages/trainee/CurriculumLearningPage'
 
 // Create a client
 const queryClient = new QueryClient({
@@ -37,7 +46,18 @@ function App() {
           <Routes>
             {/* Public Routes */}
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/change-password" element={<ChangePasswordPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+            {/* Protected route for password change (no role required) */}
+            <Route
+              path="/change-password"
+              element={
+                <ProtectedRoute>
+                  <ChangePasswordPage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Admin Routes */}
             <Route
@@ -51,6 +71,11 @@ function App() {
               <Route index element={<AdminDashboardPage />} />
               <Route path="users" element={<UsersPage />} />
               <Route path="groups" element={<GroupsPage />} />
+              <Route path="companies" element={<CompaniesPage />} />
+              <Route path="departments" element={<DepartmentsPage />} />
+              <Route path="curricula" element={<CurriculaPage />} />
+              <Route path="curricula/:id" element={<CurriculumDetailPage />} />
+              <Route path="attributes" element={<AttributesPage />} />
             </Route>
 
             {/* Trainee Routes */}
@@ -63,6 +88,8 @@ function App() {
               }
             >
               <Route index element={<TraineeDashboardPage />} />
+              <Route path="curricula" element={<TraineeCurriculaPage />} />
+              <Route path="curricula/:id" element={<CurriculumLearningPage />} />
             </Route>
 
             {/* Default Redirect */}

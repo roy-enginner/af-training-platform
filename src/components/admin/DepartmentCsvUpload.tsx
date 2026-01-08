@@ -1,38 +1,48 @@
 import { useState, useCallback } from 'react'
 import { ArrowUpTrayIcon, ArrowDownTrayIcon, DocumentTextIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { Button, Alert, Badge, ModalFooter } from '@/components/ui'
-import { parseCSV, isValidEmail } from '@/lib/utils'
-import type { CsvAction, CsvUserRow, UserRole } from '@/types/database'
+import { parseCSV } from '@/lib/utils'
+import type { Company } from '@/types/database'
 
-interface CsvUploadProps {
-  onImport: (users: CsvUserRow[]) => Promise<void>
+export interface CsvDepartmentRow {
+  action: 'add' | 'delete'
+  companyName: string
+  departmentName: string
+  parentDepartmentName: string
+  sortOrder: number
+}
+
+interface DepartmentCsvUploadProps {
+  companies: Company[]
+  onImport: (departments: CsvDepartmentRow[]) => Promise<void>
   onCancel: () => void
 }
 
-// Download CSV template
 const downloadTemplate = () => {
-  const template = `アクション,企業名,部署名,グループ名,ユーザー名,メールアドレス,権限,個人ユーザー
-add,株式会社サンプル,営業部,2025年4月研修,山田太郎,taro@example.com,trainee,false
-add,株式会社サンプル,開発部,2025年4月研修,鈴木花子,hanako@example.com,trainee,false
-add,,,個人研修,佐藤次郎,jiro@example.com,trainee,true
-delete,,,,,田中一郎,ichiro@example.com,,`
+  const template = `アクション,企業名,部署名,親部署名,表示順
+add,株式会社サンプル,営業部,,1
+add,株式会社サンプル,営業1課,営業部,1
+add,株式会社サンプル,営業2課,営業部,2
+add,株式会社サンプル,開発部,,2
+delete,株式会社サンプル,廃止部署,,`
 
   const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' })
   const link = document.createElement('a')
   link.href = URL.createObjectURL(blob)
-  link.download = 'user_import_template.csv'
+  link.download = 'department_import_template.csv'
   link.click()
   URL.revokeObjectURL(link.href)
 }
 
-export function CsvUpload({ onImport, onCancel }: CsvUploadProps) {
+export function DepartmentCsvUpload({ companies, onImport, onCancel }: DepartmentCsvUploadProps) {
   const [file, setFile] = useState<File | null>(null)
-  const [parsedUsers, setParsedUsers] = useState<CsvUserRow[]>([])
+  const [parsedDepartments, setParsedDepartments] = useState<CsvDepartmentRow[]>([])
   const [errors, setErrors] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
 
-  // Handle file selection
+  const companyNames = companies.map(c => c.name.toLowerCase())
+
   const handleFileChange = useCallback((selectedFile: File | null) => {
     if (!selectedFile) return
 
@@ -43,80 +53,60 @@ export function CsvUpload({ onImport, onCancel }: CsvUploadProps) {
     reader.onload = (e) => {
       const content = e.target?.result as string
       const rows = parseCSV(content)
-
-      // Skip header row
       const dataRows = rows.slice(1)
 
       const validationErrors: string[] = []
-      const users: CsvUserRow[] = []
+      const departments: CsvDepartmentRow[] = []
 
       dataRows.forEach((row, index) => {
-        const lineNum = index + 2 // Account for header and 0-index
+        const lineNum = index + 2
 
-        if (row.length < 6) {
+        if (row.length < 3) {
           validationErrors.push(`行${lineNum}: カラム数が不足しています`)
           return
         }
 
-        const [action, companyName, departmentName, groupName, userName, email, role, isIndividualStr] = row
-
-        // Validate action
+        const [action, companyName, departmentName, parentDepartmentName, sortOrderStr] = row
         const trimmedAction = action?.trim().toLowerCase()
+
         if (trimmedAction !== 'add' && trimmedAction !== 'delete') {
           validationErrors.push(`行${lineNum}: アクションは 'add' または 'delete' を指定してください`)
           return
         }
 
-        // Validate company name for add action
-        if (trimmedAction === 'add' && !companyName?.trim()) {
+        if (!companyName?.trim()) {
           validationErrors.push(`行${lineNum}: 企業名が空です`)
           return
         }
 
-        if (!userName?.trim()) {
-          validationErrors.push(`行${lineNum}: ユーザー名が空です`)
+        if (!companyNames.includes(companyName.trim().toLowerCase())) {
+          validationErrors.push(`行${lineNum}: 企業「${companyName}」が見つかりません`)
           return
         }
 
-        if (!email?.trim()) {
-          validationErrors.push(`行${lineNum}: メールアドレスが空です`)
+        if (!departmentName?.trim()) {
+          validationErrors.push(`行${lineNum}: 部署名が空です`)
           return
         }
 
-        if (!isValidEmail(email.trim())) {
-          validationErrors.push(`行${lineNum}: メールアドレスの形式が不正です`)
-          return
-        }
+        const sortOrder = sortOrderStr ? parseInt(sortOrderStr.trim(), 10) : 0
 
-        // Validate role
-        const trimmedRole = role?.trim().toLowerCase() || 'trainee'
-        if (trimmedAction === 'add' && !['trainee', 'group_admin'].includes(trimmedRole)) {
-          validationErrors.push(`行${lineNum}: 権限は trainee, group_admin のいずれかを指定してください`)
-          return
-        }
-
-        const isIndividual = isIndividualStr?.trim().toLowerCase() === 'true'
-
-        users.push({
-          action: trimmedAction as CsvAction,
-          companyName: companyName?.trim() || '',
-          departmentName: departmentName?.trim() || '',
-          groupName: groupName?.trim() || '',
-          userName: userName.trim(),
-          email: email.trim(),
-          role: (trimmedRole || 'trainee') as UserRole,
-          isIndividual,
+        departments.push({
+          action: trimmedAction as 'add' | 'delete',
+          companyName: companyName.trim(),
+          departmentName: departmentName.trim(),
+          parentDepartmentName: parentDepartmentName?.trim() || '',
+          sortOrder: isNaN(sortOrder) ? 0 : sortOrder,
         })
       })
 
       setErrors(validationErrors)
-      setParsedUsers(users)
+      setParsedDepartments(departments)
     }
 
     reader.readAsText(selectedFile)
-  }, [])
+  }, [companyNames])
 
-  // Handle drag events
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(true)
@@ -142,32 +132,28 @@ export function CsvUpload({ onImport, onCancel }: CsvUploadProps) {
     [handleFileChange]
   )
 
-  // Handle import
   const handleImport = async () => {
-    if (parsedUsers.length === 0) return
+    if (parsedDepartments.length === 0) return
 
     setIsLoading(true)
     try {
-      await onImport(parsedUsers)
+      await onImport(parsedDepartments)
     } finally {
       setIsLoading(false)
     }
   }
 
-  // Clear file
   const handleClear = () => {
     setFile(null)
-    setParsedUsers([])
+    setParsedDepartments([])
     setErrors([])
   }
 
-  // Count add and delete actions
-  const addCount = parsedUsers.filter((u) => u.action === 'add').length
-  const deleteCount = parsedUsers.filter((u) => u.action === 'delete').length
+  const addCount = parsedDepartments.filter((d) => d.action === 'add').length
+  const deleteCount = parsedDepartments.filter((d) => d.action === 'delete').length
 
   return (
     <div className="space-y-4">
-      {/* CSV format info */}
       <div className="bg-primary-light rounded-lg p-4">
         <div className="flex items-center justify-between mb-2">
           <h4 className="font-medium text-primary">CSVフォーマット</h4>
@@ -183,17 +169,18 @@ export function CsvUpload({ onImport, onCancel }: CsvUploadProps) {
         <p className="text-sm text-text-light mb-2">
           以下の形式でCSVファイルを作成してください：
         </p>
-        <code className="block bg-white rounded px-3 py-2 text-sm font-mono overflow-x-auto">
-          アクション,企業名,部署名,グループ名,ユーザー名,メールアドレス,権限,個人ユーザー
+        <code className="block bg-white rounded px-3 py-2 text-sm font-mono">
+          アクション,企業名,部署名,親部署名,表示順
           <br />
-          add,株式会社サンプル,営業部,2025年4月研修,山田太郎,taro@example.com,trainee,false
+          add,株式会社サンプル,営業部,,1
+          <br />
+          add,株式会社サンプル,営業1課,営業部,1
         </code>
         <p className="text-xs text-text-light mt-2">
-          ※ 部署名・グループ名は省略可。権限: trainee(研修生), group_admin(グループ管理者)
+          ※ 親部署名・表示順は省略可。親部署は先に登録が必要です。
         </p>
       </div>
 
-      {/* File upload area */}
       {!file ? (
         <div
           onDragOver={handleDragOver}
@@ -203,17 +190,11 @@ export function CsvUpload({ onImport, onCancel }: CsvUploadProps) {
             border-2 border-dashed rounded-xl p-8
             flex flex-col items-center justify-center
             transition-colors cursor-pointer
-            ${
-              isDragging
-                ? 'border-primary bg-primary-light'
-                : 'border-border hover:border-primary'
-            }
+            ${isDragging ? 'border-primary bg-primary-light' : 'border-border hover:border-primary'}
           `}
         >
           <ArrowUpTrayIcon className="w-12 h-12 text-text-light mb-4" />
-          <p className="text-text font-medium mb-2">
-            CSVファイルをドラッグ&ドロップ
-          </p>
+          <p className="text-text font-medium mb-2">CSVファイルをドラッグ&ドロップ</p>
           <p className="text-text-light text-sm mb-4">または</p>
           <label className="cursor-pointer">
             <input
@@ -235,7 +216,7 @@ export function CsvUpload({ onImport, onCancel }: CsvUploadProps) {
               <div>
                 <p className="font-medium text-text">{file.name}</p>
                 <p className="text-sm text-text-light">
-                  {parsedUsers.length}件のユーザーを検出
+                  {parsedDepartments.length}件の部署を検出
                 </p>
               </div>
             </div>
@@ -249,7 +230,6 @@ export function CsvUpload({ onImport, onCancel }: CsvUploadProps) {
         </div>
       )}
 
-      {/* Validation errors */}
       {errors.length > 0 && (
         <Alert variant="error">
           <p className="font-medium mb-2">以下のエラーがあります：</p>
@@ -257,51 +237,38 @@ export function CsvUpload({ onImport, onCancel }: CsvUploadProps) {
             {errors.slice(0, 5).map((error, index) => (
               <li key={index}>{error}</li>
             ))}
-            {errors.length > 5 && (
-              <li>...他 {errors.length - 5} 件のエラー</li>
-            )}
+            {errors.length > 5 && <li>...他 {errors.length - 5} 件のエラー</li>}
           </ul>
         </Alert>
       )}
 
-      {/* Preview */}
-      {parsedUsers.length > 0 && errors.length === 0 && (
+      {parsedDepartments.length > 0 && errors.length === 0 && (
         <div className="border border-border rounded-xl overflow-hidden">
           <div className="bg-gray-50 px-4 py-2 border-b border-border flex items-center justify-between">
             <p className="font-medium text-text">プレビュー（先頭5件）</p>
             <div className="flex items-center gap-2 text-sm">
-              {addCount > 0 && (
-                <Badge variant="success" size="sm">追加: {addCount}件</Badge>
-              )}
-              {deleteCount > 0 && (
-                <Badge variant="error" size="sm">削除: {deleteCount}件</Badge>
-              )}
+              {addCount > 0 && <Badge variant="success" size="sm">追加: {addCount}件</Badge>}
+              {deleteCount > 0 && <Badge variant="error" size="sm">削除: {deleteCount}件</Badge>}
             </div>
           </div>
           <div className="divide-y divide-border">
-            {parsedUsers.slice(0, 5).map((user, index) => (
+            {parsedDepartments.slice(0, 5).map((dept, index) => (
               <div key={index} className="px-4 py-3 flex items-center gap-4">
-                <Badge
-                  variant={user.action === 'add' ? 'success' : 'error'}
-                  size="sm"
-                >
-                  {user.action === 'add' ? '追加' : '削除'}
+                <Badge variant={dept.action === 'add' ? 'success' : 'error'} size="sm">
+                  {dept.action === 'add' ? '追加' : '削除'}
                 </Badge>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-text truncate">{user.userName}</p>
-                  <p className="text-sm text-text-light truncate">{user.email}</p>
-                </div>
-                <div className="text-sm text-text-light">
-                  {user.companyName && <span>{user.companyName}</span>}
-                  {user.companyName && user.groupName && <span> / </span>}
-                  {user.groupName && <span>{user.groupName}</span>}
-                  {user.isIndividual && <Badge variant="primary" size="sm" className="ml-2">個人</Badge>}
+                  <p className="font-medium text-text truncate">{dept.departmentName}</p>
+                  <p className="text-sm text-text-light truncate">
+                    {dept.companyName}
+                    {dept.parentDepartmentName && ` / ${dept.parentDepartmentName}`}
+                  </p>
                 </div>
               </div>
             ))}
-            {parsedUsers.length > 5 && (
+            {parsedDepartments.length > 5 && (
               <div className="px-4 py-3 text-center text-text-light">
-                ...他 {parsedUsers.length - 5} 件
+                ...他 {parsedDepartments.length - 5} 件
               </div>
             )}
           </div>
@@ -315,10 +282,10 @@ export function CsvUpload({ onImport, onCancel }: CsvUploadProps) {
         <Button
           onClick={handleImport}
           isLoading={isLoading}
-          disabled={parsedUsers.length === 0 || errors.length > 0}
+          disabled={parsedDepartments.length === 0 || errors.length > 0}
         >
           実行する
-          {parsedUsers.length > 0 && (
+          {parsedDepartments.length > 0 && (
             <span className="ml-1">
               ({addCount > 0 && `追加${addCount}`}
               {addCount > 0 && deleteCount > 0 && ' / '}

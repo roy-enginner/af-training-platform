@@ -83,7 +83,11 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
                 <div className="px-4 py-2 border-b border-border">
                   <p className="font-medium text-text">{profile?.name}</p>
                   <p className="text-sm text-text-light">
-                    {profile?.role === 'admin' ? '管理者' : '研修生'}
+                    {profile?.role === 'super_admin'
+                      ? 'スーパー管理者'
+                      : profile?.role === 'group_admin'
+                      ? 'グループ管理者'
+                      : '研修生'}
                   </p>
                 </div>
 

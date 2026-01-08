@@ -13,6 +13,13 @@
 
 [dev]
   command = "npm run dev"
+  framework = "#custom"
   targetPort = 5173
-  port = 8888
+  # ポート4444を使用（デフォルトの8888はwebsite側で使用）
+  port = 4444
   autoLaunch = false
+
+# Scheduled function for cleaning up expired groups and users
+# Runs daily at 3:00 AM JST (18:00 UTC previous day)
+[functions."cleanup-expired"]
+  schedule = "0 18 * * *"

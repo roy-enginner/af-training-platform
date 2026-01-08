@@ -2,12 +2,11 @@ import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 import { getCorsHeaders, createPreflightResponse } from './shared/cors'
 
-interface CreateUserRequest {
-  email: string
-  password: string
-  name: string
-  role: 'super_admin' | 'group_admin' | 'trainee'
-  group_id?: string
+interface ResetPasswordRequest {
+  userId: string
+  newPassword: string
+  userEmail: string
+  userName: string
 }
 
 const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
@@ -19,7 +18,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     return createPreflightResponse(origin)
   }
 
-  // Create Supabase admin client inside handler to ensure env vars are available
+  // Create Supabase admin client
   const supabaseUrl = process.env.VITE_SUPABASE_URL
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -84,9 +83,9 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   }
 
   try {
-    const body: CreateUserRequest = JSON.parse(event.body || '{}')
+    const body: ResetPasswordRequest = JSON.parse(event.body || '{}')
 
-    if (!body.email || !body.password || !body.name || !body.role) {
+    if (!body.userId || !body.newPassword || !body.userEmail || !body.userName) {
       return {
         statusCode: 400,
         headers,
@@ -94,39 +93,56 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       }
     }
 
-    // Create auth user
-    const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email: body.email,
-      password: body.password,
-      email_confirm: true,
-    })
-
-    if (createError) {
+    // Prevent admin from resetting their own password via this endpoint
+    if (body.userId === caller.id) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: createError.message }),
+        body: JSON.stringify({ error: '自分自身のパスワードはこの方法ではリセットできません' }),
       }
     }
 
-    // Update profile (created by database trigger)
-    const { data: profile, error: profileError } = await supabaseAdmin
+    // Check target user's role to prevent privilege escalation
+    const { data: targetProfile } = await supabaseAdmin
       .from('profiles')
-      .update({
-        email: body.email,
-        name: body.name,
-        role: body.role,
-        group_id: body.group_id || null,
-        must_change_password: true, // Force password change on first login
-      })
-      .eq('id', authData.user.id)
-      .select()
+      .select('role')
+      .eq('id', body.userId)
       .single()
+
+    // group_admin cannot reset password of super_admin or other group_admin
+    if (callerProfile?.role === 'group_admin') {
+      if (targetProfile?.role === 'super_admin' || targetProfile?.role === 'group_admin') {
+        return {
+          statusCode: 403,
+          headers,
+          body: JSON.stringify({ error: 'group_adminは上位権限のユーザーのパスワードをリセットできません' }),
+        }
+      }
+    }
+
+    // Update user password using admin API
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+      body.userId,
+      { password: body.newPassword }
+    )
+
+    if (updateError) {
+      console.error('Password update error:', updateError)
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: updateError.message }),
+      }
+    }
+
+    // Set must_change_password to true
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .update({ must_change_password: true })
+      .eq('id', body.userId)
 
     if (profileError) {
       console.error('Profile update error:', profileError)
-      // Rollback: delete auth user if profile update fails
-      await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
       return {
         statusCode: 400,
         headers,
@@ -137,9 +153,10 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ user: authData.user, profile }),
+      body: JSON.stringify({ success: true }),
     }
   } catch (error) {
+    console.error('Reset password error:', error)
     return {
       statusCode: 500,
       headers,

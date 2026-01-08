@@ -33,7 +33,7 @@ type PasswordFormData = z.infer<typeof passwordSchema>
 
 export function ChangePasswordPage() {
   const navigate = useNavigate()
-  const { updatePassword, role, isAuthenticated } = useAuth()
+  const { updatePassword, clearMustChangePassword, isAuthenticated, mustChangePassword } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -49,22 +49,37 @@ export function ChangePasswordPage() {
 
   const onSubmit = async (data: PasswordFormData) => {
     setError(null)
-    const { error: updateError } = await updatePassword(data.newPassword)
+    try {
+      const { error: updateError } = await updatePassword(data.newPassword)
 
-    if (updateError) {
-      setError(updateError)
-      return
-    }
-
-    setSuccess(true)
-    setTimeout(() => {
-      // Redirect based on role
-      if (role === 'admin') {
-        navigate('/admin')
-      } else {
-        navigate('/trainee')
+      if (updateError) {
+        setError(updateError)
+        return
       }
-    }, 2000)
+
+      // Clear must_change_password flag
+      const { error: clearError } = await clearMustChangePassword()
+      if (clearError) {
+        console.error('Failed to clear must_change_password:', clearError)
+      }
+
+      setSuccess(true)
+
+      // Clear session and redirect to login after delay
+      setTimeout(() => {
+        // Clear all Supabase auth data from localStorage
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-')) {
+            localStorage.removeItem(key)
+          }
+        })
+        // Force full page reload to login
+        window.location.replace('/login')
+      }, 1500)
+    } catch (err) {
+      console.error('Password update error:', err)
+      setError('パスワードの変更に失敗しました')
+    }
   }
 
   return (
@@ -80,14 +95,26 @@ export function ChangePasswordPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 gradient-hero rounded-2xl mb-4">
             <span className="text-2xl font-bold text-white">AF</span>
           </div>
-          <h1 className="text-2xl font-bold text-text">パスワード変更</h1>
-          <p className="text-text-light mt-2">新しいパスワードを設定してください</p>
+          <h1 className="text-2xl font-bold text-text">
+            {mustChangePassword ? '初回パスワード設定' : 'パスワード変更'}
+          </h1>
+          <p className="text-text-light mt-2">
+            {mustChangePassword ? (
+              <>
+                セキュリティのため、
+                <br />
+                初回ログイン時にパスワードの変更が必要です
+              </>
+            ) : (
+              '新しいパスワードを設定してください'
+            )}
+          </p>
         </div>
 
         <Card className="shadow-lg">
           {success ? (
             <Alert variant="success">
-              パスワードを変更しました。リダイレクトします...
+              パスワードを変更しました。<br></br>新しいパスワードでログインしてください。
             </Alert>
           ) : (
             <>
@@ -153,7 +180,7 @@ export function ChangePasswordPage() {
                 </Button>
               </form>
 
-              {isAuthenticated && (
+              {isAuthenticated && !mustChangePassword && (
                 <button
                   type="button"
                   onClick={() => navigate(-1)}

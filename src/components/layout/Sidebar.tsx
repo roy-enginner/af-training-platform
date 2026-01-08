@@ -4,11 +4,16 @@ import {
   HomeIcon,
   UsersIcon,
   BuildingOffice2Icon,
+  BuildingOfficeIcon,
+  RectangleStackIcon,
   BookOpenIcon,
+  TagIcon,
   ChartBarIcon,
   XMarkIcon,
   Bars3BottomLeftIcon,
 } from '@heroicons/react/24/outline'
+import { useAuth } from '@/hooks/useAuth'
+import { hasPermission } from '@/types/database'
 
 interface SidebarProps {
   isOpen: boolean
@@ -17,15 +22,38 @@ interface SidebarProps {
   onToggleCollapse: () => void
 }
 
-const menuItems = [
-  { path: '/admin', icon: HomeIcon, label: 'ダッシュボード', end: true },
-  { path: '/admin/users', icon: UsersIcon, label: 'ユーザー管理' },
-  { path: '/admin/groups', icon: BuildingOffice2Icon, label: 'グループ管理' },
-  { path: '/admin/curricula', icon: BookOpenIcon, label: 'カリキュラム管理' },
-  { path: '/admin/analytics', icon: ChartBarIcon, label: '分析・レポート' },
-]
-
 export function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }: SidebarProps) {
+  const { role } = useAuth()
+
+  // Build menu items based on role permissions
+  const menuItems = [
+    { path: '/admin', icon: HomeIcon, label: 'ダッシュボード', end: true },
+    { path: '/admin/users', icon: UsersIcon, label: 'ユーザー管理' },
+    // Companies page only for super_admin
+    ...(role && hasPermission(role, 'canManageCompanies')
+      ? [{ path: '/admin/companies', icon: BuildingOffice2Icon, label: '企業管理' }]
+      : []),
+    // Departments page only for super_admin
+    ...(role && hasPermission(role, 'canManageDepartments')
+      ? [{ path: '/admin/departments', icon: BuildingOfficeIcon, label: '部署管理' }]
+      : []),
+    // Groups page only for super_admin
+    ...(role && hasPermission(role, 'canManageGroups')
+      ? [{ path: '/admin/groups', icon: RectangleStackIcon, label: 'グループ管理' }]
+      : []),
+    // Curriculum page only for super_admin
+    ...(role && hasPermission(role, 'canManageCurriculum')
+      ? [{ path: '/admin/curricula', icon: BookOpenIcon, label: 'カリキュラム管理' }]
+      : []),
+    // Attributes page only for super_admin
+    ...(role && hasPermission(role, 'canManageAttributes')
+      ? [{ path: '/admin/attributes', icon: TagIcon, label: '属性管理' }]
+      : []),
+    // Analytics only for super_admin
+    ...(role && hasPermission(role, 'canViewAllReports')
+      ? [{ path: '/admin/analytics', icon: ChartBarIcon, label: '分析・レポート' }]
+      : []),
+  ]
   return (
     <>
       {/* Mobile overlay */}

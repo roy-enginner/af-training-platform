@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -18,7 +18,7 @@ type LoginFormData = z.infer<typeof loginSchema>
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { signIn, isAuthenticated, role } = useAuth()
+  const { signIn, isAuthenticated, role, mustChangePassword } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -30,34 +30,50 @@ export function LoginPage() {
     resolver: zodResolver(loginSchema),
   })
 
+  // Check if role is an admin role
+  const isAdminRole = role === 'super_admin' || role === 'group_admin'
+
   // Redirect if already authenticated and role is loaded
   useEffect(() => {
     if (isAuthenticated && role) {
+      // Redirect to password change if required
+      if (mustChangePassword) {
+        navigate('/change-password', { replace: true })
+        return
+      }
+
       const from = (location.state as { from?: { pathname: string } })?.from?.pathname
       if (from) {
         navigate(from, { replace: true })
-      } else if (role === 'admin') {
+      } else if (isAdminRole) {
         navigate('/admin', { replace: true })
       } else {
         navigate('/trainee', { replace: true })
       }
     }
-  }, [isAuthenticated, role, navigate, location.state])
+  }, [isAuthenticated, role, isAdminRole, mustChangePassword, navigate, location.state])
 
   const onSubmit = async (data: LoginFormData) => {
     setError(null)
-    const { error: signInError, role: userRole } = await signIn(data.email, data.password)
+    const { error: signInError, role: userRole, mustChangePassword: needsPasswordChange } = await signIn(data.email, data.password)
 
     if (signInError) {
       setError('メールアドレスまたはパスワードが正しくありません')
       return
     }
 
+    // Redirect to password change if required
+    if (needsPasswordChange) {
+      navigate('/change-password', { replace: true })
+      return
+    }
+
     // Redirect based on role
+    const isUserAdminRole = userRole === 'super_admin' || userRole === 'group_admin'
     const from = (location.state as { from?: { pathname: string } })?.from?.pathname
     if (from) {
       navigate(from, { replace: true })
-    } else if (userRole === 'admin') {
+    } else if (isUserAdminRole) {
       navigate('/admin', { replace: true })
     } else {
       navigate('/trainee', { replace: true })
@@ -129,6 +145,15 @@ export function LoginPage() {
               ログイン
             </Button>
           </form>
+
+          <div className="mt-4 text-center">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-primary hover:text-primary-dark transition-colors"
+            >
+              パスワードをお忘れですか？
+            </Link>
+          </div>
         </Card>
 
         <p className="text-center text-sm text-text-light mt-6">

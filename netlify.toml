@@ -15,6 +15,7 @@
   command = "npm run dev"
   framework = "#custom"
   targetPort = 5173
+  # ポート4444を使用（デフォルトの8888はwebsite側で使用）
   port = 4444
   autoLaunch = false
 

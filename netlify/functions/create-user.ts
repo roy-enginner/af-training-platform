@@ -20,8 +20,8 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   }
 
   // Create Supabase admin client inside handler to ensure env vars are available
-  const supabaseUrl = process.env.VITE_SUPABASE_URL!
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const supabaseUrl = process.env.VITE_SUPABASE_URL
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!supabaseUrl || !supabaseServiceKey) {
     console.error('Missing environment variables')

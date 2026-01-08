@@ -5,12 +5,12 @@ import { DAYS_AFTER_EXPIRY } from './shared/constants'
 const handler: Handler = async (_event: HandlerEvent, _context: HandlerContext) => {
   console.log('Starting cleanup of expired groups and users...')
 
-  // Create Supabase admin client
-  const supabaseUrl = process.env.VITE_SUPABASE_URL!
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  // Create Supabase admin client - 早期に環境変数をチェック
+  const supabaseUrl = process.env.VITE_SUPABASE_URL
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!supabaseUrl || !supabaseServiceKey) {
-    console.error('Missing environment variables')
+    console.error('Missing required environment variables: VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Server configuration error' }),
@@ -176,12 +176,12 @@ const handler: Handler = async (_event: HandlerEvent, _context: HandlerContext) 
       }),
     }
   } catch (error) {
-    console.error('Cleanup error:', error)
+    // エラー詳細はログのみに出力（本番環境でのセキュリティリスク防止）
+    console.error('Cleanup error:', error instanceof Error ? error.message : error)
     return {
       statusCode: 500,
       body: JSON.stringify({
         error: 'Cleanup failed',
-        details: error instanceof Error ? error.message : 'Unknown error',
       }),
     }
   }

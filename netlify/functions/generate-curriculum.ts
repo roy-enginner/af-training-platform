@@ -32,9 +32,9 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   }
 
   // Check environment variables
-  const supabaseUrl = process.env.VITE_SUPABASE_URL!
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY!
+  const supabaseUrl = process.env.VITE_SUPABASE_URL
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY
 
   if (!supabaseUrl || !supabaseServiceKey) {
     console.error('Missing Supabase environment variables')

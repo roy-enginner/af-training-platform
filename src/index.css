@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/* カスタムカラーパレット */
+@theme {
+  --color-primary: #0088CC;
+  --color-primary-dark: #005A8C;
+  --color-primary-light: #E6F4FA;
+  --color-secondary: #00C4D4;
+  --color-accent: #FFB800;
+  --color-text: #2C3E50;
+  --color-text-light: #64748B;
+  --color-bg: #F8FAFC;
+  --color-border: #E2E8F0;
+  --color-success: #10B981;
+  --color-error: #EF4444;
+  --color-warning: #F59E0B;
+}
+
+/* フォント設定 */
+body {
+  font-family: "M PLUS 1p", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* グラデーション */
+.gradient-hero {
+  background: linear-gradient(135deg, #0088CC 0%, #00C4D4 100%);
+}
+
+/* カスタムスクロールバー */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-light);
+}

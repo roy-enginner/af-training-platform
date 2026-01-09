@@ -56,6 +56,68 @@ function truncateText(text: string, maxLength: number): string {
   return text.substring(0, maxLength) + '\n\n[... 資料の続きは省略されています ...]'
 }
 
+// 入力検証用の定数
+const INPUT_LIMITS = {
+  goal: { min: 10, max: 1000 },
+  targetAudience: { min: 1, max: 200 },
+  customInstructions: { min: 0, max: 500 },
+}
+
+// 入力サニタイゼーション：プロンプトインジェクション対策
+function sanitizeUserInput(input: string): string {
+  if (!input || typeof input !== 'string') return ''
+
+  // 危険なパターンを除去
+  let sanitized = input
+    // システムプロンプト/ロール切り替えの試行をブロック
+    .replace(/\[INST\]/gi, '')
+    .replace(/\[\/INST\]/gi, '')
+    .replace(/<<SYS>>/gi, '')
+    .replace(/<<\/SYS>>/gi, '')
+    .replace(/<\|im_start\|>/gi, '')
+    .replace(/<\|im_end\|>/gi, '')
+    .replace(/system:/gi, '')
+    .replace(/assistant:/gi, '')
+    .replace(/human:/gi, '')
+    .replace(/user:/gi, '')
+    // JSONペイロードインジェクションの防止
+    .replace(/}\s*{/g, '} {')
+    // 連続した改行を制限
+    .replace(/\n{4,}/g, '\n\n\n')
+    // 制御文字を除去（改行・タブは許可）
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+
+  return sanitized.trim()
+}
+
+// 入力バリデーション
+function validateUserInput(
+  field: keyof typeof INPUT_LIMITS,
+  value: string | undefined,
+  required: boolean = false
+): { valid: boolean; sanitized?: string; error?: string } {
+  const limits = INPUT_LIMITS[field]
+
+  if (!value || value.trim().length === 0) {
+    if (required) {
+      return { valid: false, error: `${field}を入力してください` }
+    }
+    return { valid: true, sanitized: '' }
+  }
+
+  const sanitized = sanitizeUserInput(value)
+
+  if (sanitized.length < limits.min) {
+    return { valid: false, error: `${field}は${limits.min}文字以上で入力してください` }
+  }
+
+  if (sanitized.length > limits.max) {
+    return { valid: false, error: `${field}は${limits.max}文字以内で入力してください` }
+  }
+
+  return { valid: true, sanitized }
+}
+
 const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
   const origin = event.headers.origin
   const headers = getCorsHeaders(origin)
@@ -151,13 +213,36 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       }
     }
 
-    if (!body.goal || body.goal.trim().length < 10) {
+    // 入力サニタイゼーションとバリデーション
+    const goalValidation = validateUserInput('goal', body.goal, true)
+    if (!goalValidation.valid) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: '研修ゴールを10文字以上で入力してください' }),
+        body: JSON.stringify({ error: goalValidation.error }),
       }
     }
+    const sanitizedGoal = goalValidation.sanitized!
+
+    const targetAudienceValidation = validateUserInput('targetAudience', body.targetAudience, false)
+    if (!targetAudienceValidation.valid) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: targetAudienceValidation.error }),
+      }
+    }
+    const sanitizedTargetAudience = targetAudienceValidation.sanitized || '企業の一般社員'
+
+    const customInstructionsValidation = validateUserInput('customInstructions', body.options?.customInstructions, false)
+    if (!customInstructionsValidation.valid) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: customInstructionsValidation.error }),
+      }
+    }
+    const sanitizedCustomInstructions = customInstructionsValidation.sanitized || ''
 
     if (!body.step || !['structure', 'content'].includes(body.step)) {
       return {
@@ -195,11 +280,14 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       apiKey: anthropicApiKey,
     })
 
-    // パラメータ設定
-    const targetAudience = body.targetAudience || '企業の一般社員'
+    // パラメータ設定（サニタイズ済みの値を使用）
+    const targetAudience = sanitizedTargetAudience
     const totalDuration = body.durationMinutes || 60
     const difficulty = body.difficultyLevel || 'beginner'
-    const options = body.options || {}
+    const options = {
+      ...body.options,
+      customInstructions: sanitizedCustomInstructions, // サニタイズ済み
+    }
 
     // 難易度ラベル
     const difficultyLabels: Record<string, string> = {
@@ -269,7 +357,7 @@ ${options.customInstructions ? `- 追加指示: ${options.customInstructions}` :
       const userPrompt = `以下の資料を基に、AI研修カリキュラムの構成を設計してください。
 
 【研修ゴール】
-${body.goal}
+${sanitizedGoal}
 
 【対象者】
 ${targetAudience}
@@ -412,7 +500,7 @@ ${options.customInstructions ? `- 追加指示: ${options.customInstructions}` :
 【カリキュラム全体】
 タイトル: ${structure.name}
 説明: ${structure.description}
-研修ゴール: ${body.goal}
+研修ゴール: ${sanitizedGoal}
 対象者: ${structure.targetAudience}
 難易度: ${difficultyLabels[structure.difficultyLevel]}
 

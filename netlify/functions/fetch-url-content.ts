@@ -3,9 +3,97 @@ import { createClient } from '@supabase/supabase-js'
 import { getCorsHeaders, createPreflightResponse } from './shared/cors'
 import * as cheerio from 'cheerio'
 import { convert } from 'html-to-text'
+import { URL } from 'url'
+import * as dns from 'dns'
+import { promisify } from 'util'
+
+const dnsLookup = promisify(dns.lookup)
 
 interface FetchUrlRequest {
   materialId: string
+}
+
+// SSRF対策: プライベートIP範囲のチェック
+function isPrivateIP(ip: string): boolean {
+  // IPv4プライベートアドレス範囲
+  const privateIPv4Ranges = [
+    /^10\./,                                // 10.0.0.0/8
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./,       // 172.16.0.0/12
+    /^192\.168\./,                          // 192.168.0.0/16
+    /^127\./,                               // 127.0.0.0/8 (localhost)
+    /^169\.254\./,                          // 169.254.0.0/16 (リンクローカル)
+    /^0\./,                                 // 0.0.0.0/8
+    /^100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\./, // 100.64.0.0/10 (CGNAT)
+  ]
+
+  // IPv6プライベートアドレス
+  const privateIPv6Patterns = [
+    /^::1$/,                                // localhost
+    /^fe80:/i,                              // リンクローカル
+    /^fc00:/i,                              // ユニークローカル
+    /^fd[0-9a-f]{2}:/i,                     // ユニークローカル
+  ]
+
+  // IPv4チェック
+  for (const range of privateIPv4Ranges) {
+    if (range.test(ip)) {
+      return true
+    }
+  }
+
+  // IPv6チェック
+  for (const pattern of privateIPv6Patterns) {
+    if (pattern.test(ip)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+// SSRF対策: URLの安全性を検証
+async function validateUrlSafety(urlString: string): Promise<{ safe: boolean; error?: string }> {
+  try {
+    const url = new URL(urlString)
+
+    // プロトコルチェック（http/httpsのみ許可）
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return { safe: false, error: `許可されていないプロトコルです: ${url.protocol}` }
+    }
+
+    // ホスト名チェック
+    const hostname = url.hostname.toLowerCase()
+
+    // localhostやメタデータエンドポイントのブロック
+    const blockedHosts = [
+      'localhost',
+      '127.0.0.1',
+      '0.0.0.0',
+      '[::1]',
+      'metadata.google.internal',           // GCP metadata
+      '169.254.169.254',                    // AWS/Azure/GCP metadata
+      'metadata.azure.com',                 // Azure metadata
+    ]
+
+    if (blockedHosts.includes(hostname)) {
+      return { safe: false, error: '内部ホストへのアクセスは許可されていません' }
+    }
+
+    // DNS解決してIPアドレスをチェック
+    try {
+      const { address } = await dnsLookup(hostname)
+      if (isPrivateIP(address)) {
+        return { safe: false, error: 'プライベートIPアドレスへのアクセスは許可されていません' }
+      }
+    } catch (dnsError) {
+      // DNS解決に失敗した場合はブロック
+      return { safe: false, error: 'ホスト名を解決できませんでした' }
+    }
+
+    return { safe: true }
+  } catch {
+    return { safe: false, error: '無効なURLです' }
+  }
 }
 
 interface MaterialMetadata {
@@ -152,6 +240,12 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       .eq('id', body.materialId)
 
     try {
+      // SSRF対策: URLの安全性を検証
+      const urlValidation = await validateUrlSafety(material.original_url)
+      if (!urlValidation.safe) {
+        throw new Error(`URLの検証に失敗しました: ${urlValidation.error}`)
+      }
+
       // URLからコンテンツを取得
       const response = await fetch(material.original_url, {
         headers: {

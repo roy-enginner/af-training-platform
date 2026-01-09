@@ -2,6 +2,77 @@ import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 import { getCorsHeaders, createPreflightResponse } from './shared/cors'
 
+// ファイル検証用の定数
+const MAX_FILE_SIZE_BYTES = 52428800 // 50MB
+
+// 許可されたMIMEタイプ
+const ALLOWED_MIME_TYPES: Record<string, string[]> = {
+  pdf: ['application/pdf'],
+  excel: [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+    'application/vnd.ms-excel', // .xls
+  ],
+  text: ['text/plain'],
+  markdown: ['text/plain', 'text/markdown', 'text/x-markdown'],
+}
+
+// ファイル拡張子とMIMEタイプのマッピング
+const EXTENSION_TO_MIME: Record<string, string[]> = {
+  '.pdf': ['application/pdf'],
+  '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+  '.xls': ['application/vnd.ms-excel'],
+  '.txt': ['text/plain'],
+  '.md': ['text/plain', 'text/markdown', 'text/x-markdown'],
+  '.markdown': ['text/plain', 'text/markdown', 'text/x-markdown'],
+}
+
+// ファイル名の検証（パストラバーサル防止）
+function isValidFilename(filename: string): boolean {
+  // パストラバーサル攻撃の防止
+  if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    return false
+  }
+  // 制御文字のブロック
+  if (/[\x00-\x1f\x7f]/.test(filename)) {
+    return false
+  }
+  // 空白のみのファイル名を拒否
+  if (filename.trim().length === 0) {
+    return false
+  }
+  return true
+}
+
+// MIMEタイプとファイル拡張子の整合性チェック
+function validateMimeType(materialType: string, mimeType: string | undefined, filename: string | undefined): { valid: boolean; error?: string } {
+  if (!mimeType) {
+    return { valid: true } // MIMEタイプが未指定の場合はスキップ（テキスト入力等）
+  }
+
+  // materialTypeに対する許可されたMIMEタイプをチェック
+  const allowedMimes = ALLOWED_MIME_TYPES[materialType]
+  if (allowedMimes && !allowedMimes.includes(mimeType)) {
+    return {
+      valid: false,
+      error: `許可されていないファイル形式です: ${mimeType}`,
+    }
+  }
+
+  // ファイル名がある場合、拡張子とMIMEタイプの整合性をチェック
+  if (filename) {
+    const ext = filename.slice(filename.lastIndexOf('.')).toLowerCase()
+    const expectedMimes = EXTENSION_TO_MIME[ext]
+    if (expectedMimes && !expectedMimes.includes(mimeType)) {
+      return {
+        valid: false,
+        error: `ファイル拡張子(${ext})とMIMEタイプ(${mimeType})が一致しません`,
+      }
+    }
+  }
+
+  return { valid: true }
+}
+
 // リクエスト型
 interface UploadMaterialRequest {
   name: string
@@ -119,6 +190,36 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
           statusCode: 400,
           headers,
           body: JSON.stringify({ error: 'ファイルのストレージパスが必要です' }),
+        }
+      }
+
+      // ファイルサイズ検証
+      if (body.fileSizeBytes && body.fileSizeBytes > MAX_FILE_SIZE_BYTES) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: `ファイルサイズが大きすぎます。最大${MAX_FILE_SIZE_BYTES / 1024 / 1024}MBまでです。`,
+          }),
+        }
+      }
+
+      // ファイル名検証（パストラバーサル防止）
+      if (body.originalFilename && !isValidFilename(body.originalFilename)) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: '無効なファイル名です' }),
+        }
+      }
+
+      // MIMEタイプ検証
+      const mimeValidation = validateMimeType(body.materialType, body.mimeType, body.originalFilename)
+      if (!mimeValidation.valid) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: mimeValidation.error }),
         }
       }
     } else if (body.materialType === 'url') {

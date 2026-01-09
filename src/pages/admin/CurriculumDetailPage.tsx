@@ -28,12 +28,14 @@ const DIFFICULTY_LABELS: Record<DifficultyLevel, string> = {
   beginner: '初級',
   intermediate: '中級',
   advanced: '上級',
+  mixed: '混合',
 }
 
-const DIFFICULTY_COLORS: Record<DifficultyLevel, 'success' | 'warning' | 'error'> = {
+const DIFFICULTY_COLORS: Record<DifficultyLevel, 'success' | 'warning' | 'error' | 'primary'> = {
   beginner: 'success',
   intermediate: 'warning',
   advanced: 'error',
+  mixed: 'primary',
 }
 
 export function CurriculumDetailPage() {

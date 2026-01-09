@@ -15,7 +15,7 @@ const curriculumSchema = z.object({
     .max(480, '最大480分（8時間）まで設定できます')
     .nullable()
     .optional(),
-  difficultyLevel: z.enum(['beginner', 'intermediate', 'advanced'] as const),
+  difficultyLevel: z.enum(['beginner', 'intermediate', 'advanced', 'mixed'] as const),
   tags: z.string().optional(),
   sortOrder: z
     .number({ invalid_type_error: '数値を入力してください' })
@@ -55,6 +55,7 @@ const DIFFICULTY_LABELS: Record<DifficultyLevel, string> = {
   beginner: '初級',
   intermediate: '中級',
   advanced: '上級',
+  mixed: '混合',
 }
 
 export function CurriculumForm({ curriculum, onSubmit, onCancel }: CurriculumFormProps) {

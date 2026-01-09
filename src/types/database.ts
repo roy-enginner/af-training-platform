@@ -141,7 +141,8 @@ export interface AttributeDefinition {
 // カリキュラム
 // ============================================
 export type ContentType = 'document' | 'video' | 'quiz' | 'external'
-export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced'
+export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced' | 'mixed'
+export type SeriesType = 'sequential' | 'modular'
 
 export interface Curriculum {
   id: string
@@ -154,8 +155,199 @@ export interface Curriculum {
   tags: string[] | null
   sort_order: number
   is_active: boolean
+  // シリーズ関連
+  series_id: string | null
+  series_order: number | null
+  part_title: string | null
+  // 資料・テンプレート関連
+  source_material_id: string | null
+  template_id: string | null
+  generation_params: GenerationOptions | null
+  current_version: number
   created_at: string
   updated_at: string
+}
+
+// ============================================
+// カリキュラムシリーズ
+// ============================================
+export interface CurriculumSeries {
+  id: string
+  name: string
+  description: string | null
+  series_type: SeriesType
+  target_audience: string | null
+  difficulty_level: DifficultyLevel | null
+  total_duration_minutes: number | null
+  tags: string[] | null
+  is_active: boolean
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CurriculumSeriesWithCurricula extends CurriculumSeries {
+  curricula: Curriculum[]
+}
+
+// ============================================
+// ソース資料
+// ============================================
+export type MaterialType = 'pdf' | 'url' | 'text' | 'markdown' | 'excel'
+export type ExtractionStatus = 'pending' | 'processing' | 'completed' | 'failed'
+
+export interface SourceMaterial {
+  id: string
+  name: string
+  material_type: MaterialType
+  storage_path: string | null
+  original_filename: string | null
+  original_url: string | null
+  file_size_bytes: number | null
+  mime_type: string | null
+  extracted_text: string | null
+  extraction_status: ExtractionStatus
+  extraction_error: string | null
+  extracted_at: string | null
+  metadata: MaterialMetadata | null
+  tags: string[] | null
+  uploaded_by: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface MaterialMetadata {
+  page_count?: number
+  char_count?: number
+  word_count?: number
+  sheet_names?: string[]
+  title?: string
+  author?: string
+}
+
+// ============================================
+// カリキュラム↔資料リンク
+// ============================================
+export interface CurriculumMaterialLink {
+  id: string
+  curriculum_id: string
+  material_id: string
+  reference_range: ReferenceRange | null
+  usage_note: string | null
+  created_at: string
+}
+
+export interface ReferenceRange {
+  start_page?: number
+  end_page?: number
+  sections?: string[]
+}
+
+// ============================================
+// シリーズ進捗
+// ============================================
+export interface SeriesProgress {
+  id: string
+  profile_id: string
+  series_id: string
+  status: CurriculumStatus
+  completed_curricula_count: number
+  total_curricula_count: number
+  started_at: string | null
+  completed_at: string | null
+  updated_at: string
+}
+
+// ============================================
+// カリキュラムテンプレート
+// ============================================
+export type TemplateType = 'structure' | 'prompt' | 'style'
+
+export interface CurriculumTemplate {
+  id: string
+  name: string
+  description: string | null
+  template_type: TemplateType
+  content: TemplateContent
+  is_system: boolean
+  created_by: string | null
+  is_active: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface TemplateContent {
+  depthLevel?: DepthLevel
+  exerciseRatio?: number
+  exampleFrequency?: ExampleFrequency
+  toneStyle?: ToneStyle
+  promptAddition?: string
+  chapterStructure?: ChapterTemplateStructure[]
+}
+
+export interface ChapterTemplateStructure {
+  titlePattern: string
+  estimatedMinutes: number
+  includeExercise: boolean
+}
+
+// ============================================
+// カリキュラムバージョン
+// ============================================
+export interface CurriculumVersion {
+  id: string
+  curriculum_id: string
+  version_number: number
+  content_snapshot: CurriculumSnapshot
+  change_summary: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface CurriculumSnapshot {
+  curriculum: Omit<Curriculum, 'id' | 'created_at' | 'updated_at'>
+  chapters: Omit<Chapter, 'id' | 'created_at' | 'updated_at'>[]
+}
+
+// ============================================
+// カリキュラムフィードバック
+// ============================================
+export type FeedbackType = 'helpful' | 'unclear' | 'too_easy' | 'too_hard' | 'error' | 'suggestion'
+
+export interface CurriculumFeedback {
+  id: string
+  curriculum_id: string
+  chapter_id: string | null
+  profile_id: string
+  feedback_type: FeedbackType
+  rating: number | null
+  comment: string | null
+  is_resolved: boolean
+  resolved_at: string | null
+  resolved_by: string | null
+  created_at: string
+}
+
+export interface CurriculumFeedbackWithProfile extends CurriculumFeedback {
+  profile: Pick<Profile, 'id' | 'name' | 'email'>
+}
+
+// ============================================
+// 生成オプション
+// ============================================
+export type DepthLevel = 'overview' | 'standard' | 'deep'
+export type ExampleFrequency = 'minimal' | 'moderate' | 'abundant'
+export type ToneStyle = 'formal' | 'casual' | 'technical'
+
+export interface GenerationOptions {
+  depthLevel: DepthLevel
+  exerciseRatio: number
+  exampleFrequency: ExampleFrequency
+  toneStyle: ToneStyle
+  templateId?: string
+  customInstructions?: string
 }
 
 // ============================================
@@ -389,6 +581,66 @@ export type Database = {
         }
         Update: Partial<Omit<CurriculumProgress, 'id'>>
       }
+      // 新規テーブル
+      curriculum_series: {
+        Row: CurriculumSeries
+        Insert: Omit<CurriculumSeries, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<CurriculumSeries, 'id' | 'created_at'>>
+      }
+      source_materials: {
+        Row: SourceMaterial
+        Insert: Omit<SourceMaterial, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<SourceMaterial, 'id' | 'created_at'>>
+      }
+      curriculum_material_links: {
+        Row: CurriculumMaterialLink
+        Insert: Omit<CurriculumMaterialLink, 'id' | 'created_at'> & {
+          id?: string
+          created_at?: string
+        }
+        Update: Partial<Omit<CurriculumMaterialLink, 'id' | 'created_at'>>
+      }
+      series_progress: {
+        Row: SeriesProgress
+        Insert: Omit<SeriesProgress, 'id' | 'updated_at'> & {
+          id?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<SeriesProgress, 'id'>>
+      }
+      curriculum_templates: {
+        Row: CurriculumTemplate
+        Insert: Omit<CurriculumTemplate, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<CurriculumTemplate, 'id' | 'created_at'>>
+      }
+      curriculum_versions: {
+        Row: CurriculumVersion
+        Insert: Omit<CurriculumVersion, 'id' | 'created_at'> & {
+          id?: string
+          created_at?: string
+        }
+        Update: Partial<Omit<CurriculumVersion, 'id' | 'created_at'>>
+      }
+      curriculum_feedback: {
+        Row: CurriculumFeedback
+        Insert: Omit<CurriculumFeedback, 'id' | 'created_at'> & {
+          id?: string
+          created_at?: string
+        }
+        Update: Partial<Omit<CurriculumFeedback, 'id' | 'created_at'>>
+      }
     }
     Views: {
       [_ in never]: never
@@ -399,6 +651,14 @@ export type Database = {
     Enums: {
       curriculum_target_type: CurriculumTargetType
       curriculum_status: CurriculumStatus
+      series_type: SeriesType
+      material_type: MaterialType
+      extraction_status: ExtractionStatus
+      template_type: TemplateType
+      feedback_type: FeedbackType
+      depth_level: DepthLevel
+      example_frequency: ExampleFrequency
+      tone_style: ToneStyle
     }
     CompositeTypes: {
       [_ in never]: never

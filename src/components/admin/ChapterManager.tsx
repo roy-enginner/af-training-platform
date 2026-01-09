@@ -7,11 +7,13 @@ import {
   ChevronDownIcon,
   ClockIcon,
   DocumentTextIcon,
+  ArrowPathIcon,
 } from '@heroicons/react/24/outline'
 import { Button, Badge, Modal, ModalFooter, Alert } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { ChapterForm, type ChapterFormSubmitData } from './ChapterForm'
-import type { Chapter } from '@/types/database'
+import type { Chapter, DepthLevel, ExampleFrequency, ToneStyle } from '@/types/database'
+import { useAuth } from '@/hooks/useAuth'
 
 interface ChapterManagerProps {
   curriculumId: string
@@ -19,12 +21,48 @@ interface ChapterManagerProps {
   onChaptersChange?: () => void
 }
 
+// 再生成オプションのラベル
+const DEPTH_LABELS: Record<DepthLevel, string> = {
+  overview: '概要 - 要点を簡潔に',
+  standard: '標準 - バランスの取れた詳細度',
+  deep: '深掘り - 詳細な解説と背景知識',
+}
+
+const EXAMPLE_LABELS: Record<ExampleFrequency, string> = {
+  minimal: '最小限',
+  moderate: '適度',
+  abundant: '豊富',
+}
+
+const TONE_LABELS: Record<ToneStyle, string> = {
+  formal: 'フォーマル',
+  casual: 'カジュアル',
+  technical: '技術的',
+}
+
+interface RegenerateOptions {
+  depthLevel: DepthLevel
+  exerciseRatio: number
+  exampleFrequency: ExampleFrequency
+  toneStyle: ToneStyle
+}
+
 export function ChapterManager({ curriculumId, onChaptersChange }: ChapterManagerProps) {
+  const { session } = useAuth()
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isFormModalOpen, setIsFormModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [isRegenerateModalOpen, setIsRegenerateModalOpen] = useState(false)
+  const [isRegenerating, setIsRegenerating] = useState(false)
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null)
+  const [regenerateInstructions, setRegenerateInstructions] = useState('')
+  const [regenerateOptions, setRegenerateOptions] = useState<RegenerateOptions>({
+    depthLevel: 'standard',
+    exerciseRatio: 30,
+    exampleFrequency: 'moderate',
+    toneStyle: 'formal',
+  })
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
@@ -171,6 +209,47 @@ export function ChapterManager({ curriculumId, onChaptersChange }: ChapterManage
     }
   }
 
+  // Handle chapter regeneration
+  const handleRegenerateChapter = async () => {
+    if (!selectedChapter || !session?.access_token) return
+
+    try {
+      setIsRegenerating(true)
+      setError(null)
+
+      const response = await fetch('/.netlify/functions/regenerate-chapter', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          chapterId: selectedChapter.id,
+          instructions: regenerateInstructions || undefined,
+          options: regenerateOptions,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'チャプターの再生成に失敗しました')
+      }
+
+      setSuccessMessage(`チャプター「${selectedChapter.title}」を再生成しました`)
+      setIsRegenerateModalOpen(false)
+      setSelectedChapter(null)
+      setRegenerateInstructions('')
+      fetchChapters()
+      onChaptersChange?.()
+    } catch (err) {
+      console.error('Error regenerating chapter:', err)
+      setError(err instanceof Error ? err.message : 'チャプターの再生成に失敗しました')
+    } finally {
+      setIsRegenerating(false)
+    }
+  }
+
   // Calculate total duration
   const totalMinutes = chapters.reduce((sum, ch) => sum + ch.estimated_minutes, 0)
 
@@ -278,6 +357,16 @@ export function ChapterManager({ curriculumId, onChaptersChange }: ChapterManage
                 <button
                   onClick={() => {
                     setSelectedChapter(chapter)
+                    setIsRegenerateModalOpen(true)
+                  }}
+                  className="p-1.5 rounded hover:bg-primary-light transition-colors"
+                  title="AIで再生成"
+                >
+                  <ArrowPathIcon className="w-4 h-4 text-primary" />
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedChapter(chapter)
                     setIsFormModalOpen(true)
                   }}
                   className="p-1.5 rounded hover:bg-gray-100 transition-colors"
@@ -350,6 +439,163 @@ export function ChapterManager({ curriculumId, onChaptersChange }: ChapterManage
           </Button>
           <Button variant="danger" onClick={handleDeleteChapter}>
             削除する
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Regenerate modal */}
+      <Modal
+        isOpen={isRegenerateModalOpen}
+        onClose={() => {
+          setIsRegenerateModalOpen(false)
+          setSelectedChapter(null)
+          setRegenerateInstructions('')
+        }}
+        title="チャプターのAI再生成"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="bg-gray-50 rounded-lg p-4">
+            <p className="text-sm text-text-light mb-1">再生成対象</p>
+            <p className="font-medium text-text">{selectedChapter?.title}</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text mb-1.5">
+              再生成の指示（任意）
+            </label>
+            <textarea
+              className="w-full px-4 py-2.5 border border-border rounded-lg bg-white text-text
+                transition-colors duration-200 min-h-[100px]
+                focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-primary/50 focus:border-primary"
+              placeholder="例：もっと具体例を増やす、難易度を下げる、演習を追加する..."
+              value={regenerateInstructions}
+              onChange={(e) => setRegenerateInstructions(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-text-light">
+              AIへの追加指示を入力できます。空白の場合は品質向上のための再生成を行います。
+            </p>
+          </div>
+
+          <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+            <h4 className="font-medium text-text">生成オプション</h4>
+
+            {/* 内容の深さ */}
+            <div>
+              <label className="block text-sm font-medium text-text mb-1.5">
+                内容の深さ
+              </label>
+              <select
+                className="w-full px-4 py-2.5 border border-border rounded-lg bg-white text-text
+                  transition-colors duration-200
+                  focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-primary/50 focus:border-primary"
+                value={regenerateOptions.depthLevel}
+                onChange={(e) => setRegenerateOptions(prev => ({
+                  ...prev,
+                  depthLevel: e.target.value as DepthLevel,
+                }))}
+              >
+                {(Object.keys(DEPTH_LABELS) as DepthLevel[]).map((level) => (
+                  <option key={level} value={level}>
+                    {DEPTH_LABELS[level]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 演習の比率 */}
+            <div>
+              <label className="block text-sm font-medium text-text mb-1.5">
+                演習の比率: {regenerateOptions.exerciseRatio}%
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                value={regenerateOptions.exerciseRatio}
+                onChange={(e) => setRegenerateOptions(prev => ({
+                  ...prev,
+                  exerciseRatio: Number(e.target.value),
+                }))}
+              />
+              <div className="flex justify-between text-xs text-text-light mt-1">
+                <span>解説重視</span>
+                <span>演習重視</span>
+              </div>
+            </div>
+
+            {/* 例示の量 */}
+            <div>
+              <label className="block text-sm font-medium text-text mb-1.5">
+                例示の量
+              </label>
+              <select
+                className="w-full px-4 py-2.5 border border-border rounded-lg bg-white text-text
+                  transition-colors duration-200
+                  focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-primary/50 focus:border-primary"
+                value={regenerateOptions.exampleFrequency}
+                onChange={(e) => setRegenerateOptions(prev => ({
+                  ...prev,
+                  exampleFrequency: e.target.value as ExampleFrequency,
+                }))}
+              >
+                {(Object.keys(EXAMPLE_LABELS) as ExampleFrequency[]).map((freq) => (
+                  <option key={freq} value={freq}>
+                    {EXAMPLE_LABELS[freq]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 言語スタイル */}
+            <div>
+              <label className="block text-sm font-medium text-text mb-1.5">
+                言語スタイル
+              </label>
+              <select
+                className="w-full px-4 py-2.5 border border-border rounded-lg bg-white text-text
+                  transition-colors duration-200
+                  focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-primary/50 focus:border-primary"
+                value={regenerateOptions.toneStyle}
+                onChange={(e) => setRegenerateOptions(prev => ({
+                  ...prev,
+                  toneStyle: e.target.value as ToneStyle,
+                }))}
+              >
+                {(Object.keys(TONE_LABELS) as ToneStyle[]).map((style) => (
+                  <option key={style} value={style}>
+                    {TONE_LABELS[style]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <Alert variant="warning">
+            再生成を実行すると、現在のチャプターコンテンツは上書きされます。
+          </Alert>
+        </div>
+
+        <ModalFooter>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setIsRegenerateModalOpen(false)
+              setSelectedChapter(null)
+              setRegenerateInstructions('')
+            }}
+            disabled={isRegenerating}
+          >
+            キャンセル
+          </Button>
+          <Button
+            onClick={handleRegenerateChapter}
+            isLoading={isRegenerating}
+            leftIcon={<ArrowPathIcon className="w-4 h-4" />}
+          >
+            再生成する
           </Button>
         </ModalFooter>
       </Modal>

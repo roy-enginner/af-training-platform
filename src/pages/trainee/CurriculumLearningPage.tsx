@@ -11,11 +11,18 @@ import {
   ListBulletIcon,
   DocumentTextIcon,
   ClipboardDocumentListIcon,
+  ChatBubbleLeftRightIcon,
+  HandThumbUpIcon,
+  QuestionMarkCircleIcon,
+  ExclamationTriangleIcon,
+  LightBulbIcon,
 } from '@heroicons/react/24/outline'
 import { CheckCircleIcon as CheckCircleSolidIcon } from '@heroicons/react/24/solid'
-import { Card, CardContent, Badge, Button, Alert } from '@/components/ui'
+import { Card, CardContent, Badge, Button, Alert, Modal, ModalFooter } from '@/components/ui'
 import { useTraineeCurriculum } from '@/hooks/useTraineeCurricula'
-import type { Chapter } from '@/types/database'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/hooks/useAuth'
+import type { Chapter, FeedbackType } from '@/types/database'
 
 const DIFFICULTY_LABELS: Record<string, string> = {
   beginner: '初級',
@@ -28,6 +35,16 @@ const DIFFICULTY_COLORS: Record<string, 'success' | 'warning' | 'error'> = {
   intermediate: 'warning',
   advanced: 'error',
 }
+
+// フィードバックタイプの設定
+const FEEDBACK_TYPES: { type: FeedbackType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { type: 'helpful', label: '役に立った', icon: HandThumbUpIcon },
+  { type: 'unclear', label: 'わかりにくい', icon: QuestionMarkCircleIcon },
+  { type: 'too_easy', label: '簡単すぎる', icon: CheckCircleIcon },
+  { type: 'too_hard', label: '難しすぎる', icon: ExclamationTriangleIcon },
+  { type: 'error', label: 'エラー・誤りがある', icon: ExclamationTriangleIcon },
+  { type: 'suggestion', label: '改善提案', icon: LightBulbIcon },
+]
 
 function ChapterContent({ chapter }: { chapter: Chapter }) {
   return (
@@ -103,10 +120,19 @@ function ChapterContent({ chapter }: { chapter: Chapter }) {
 
 export function CurriculumLearningPage() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useAuth()
   const { curriculum, isLoading, error, startCurriculum, updateProgress } =
     useTraineeCurriculum(id || '')
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0)
   const [showChapterList, setShowChapterList] = useState(false)
+  // フィードバック関連の状態
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false)
+  const [feedbackType, setFeedbackType] = useState<FeedbackType | null>(null)
+  const [feedbackComment, setFeedbackComment] = useState('')
+  const [feedbackRating, setFeedbackRating] = useState<number | null>(null)
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
+  const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
 
   // Start curriculum on first load if not started
   useEffect(() => {
@@ -182,8 +208,57 @@ export function CurriculumLearningPage() {
     setShowChapterList(false)
   }
 
+  // フィードバック送信
+  const handleSubmitFeedback = async () => {
+    if (!feedbackType || !user || !curriculum) return
+
+    try {
+      setIsSubmittingFeedback(true)
+      setFeedbackError(null)
+
+      const { error: insertError } = await supabase.from('curriculum_feedback').insert({
+        curriculum_id: curriculum.id,
+        chapter_id: currentChapter?.id || null,
+        profile_id: user.id,
+        feedback_type: feedbackType,
+        rating: feedbackRating,
+        comment: feedbackComment || null,
+        is_resolved: false,
+      })
+
+      if (insertError) throw insertError
+
+      setFeedbackSuccess('フィードバックを送信しました。ご協力ありがとうございます！')
+      setIsFeedbackModalOpen(false)
+      setFeedbackType(null)
+      setFeedbackComment('')
+      setFeedbackRating(null)
+    } catch (err) {
+      console.error('Error submitting feedback:', err)
+      setFeedbackError('フィードバックの送信に失敗しました')
+    } finally {
+      setIsSubmittingFeedback(false)
+    }
+  }
+
+  // フィードバックモーダルを閉じる
+  const closeFeedbackModal = () => {
+    setIsFeedbackModalOpen(false)
+    setFeedbackType(null)
+    setFeedbackComment('')
+    setFeedbackRating(null)
+    setFeedbackError(null)
+  }
+
   return (
     <div className="space-y-6">
+      {/* フィードバック成功メッセージ */}
+      {feedbackSuccess && (
+        <Alert variant="success" onClose={() => setFeedbackSuccess(null)}>
+          {feedbackSuccess}
+        </Alert>
+      )}
+
       {/* Back button and curriculum info */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -371,24 +446,35 @@ export function CurriculumLearningPage() {
               前のチャプター
             </Button>
 
-            {isLastChapter ? (
+            <div className="flex items-center gap-2">
               <Button
-                leftIcon={<CheckCircleIcon className="w-5 h-5" />}
-                onClick={handleComplete}
-                disabled={curriculum.progress?.status === 'completed'}
+                variant="ghost"
+                size="sm"
+                leftIcon={<ChatBubbleLeftRightIcon className="w-4 h-4" />}
+                onClick={() => setIsFeedbackModalOpen(true)}
               >
-                {curriculum.progress?.status === 'completed'
-                  ? '完了済み'
-                  : 'カリキュラムを完了'}
+                フィードバック
               </Button>
-            ) : (
-              <Button
-                rightIcon={<ChevronRightIcon className="w-4 h-4" />}
-                onClick={handleNext}
-              >
-                次のチャプター
-              </Button>
-            )}
+
+              {isLastChapter ? (
+                <Button
+                  leftIcon={<CheckCircleIcon className="w-5 h-5" />}
+                  onClick={handleComplete}
+                  disabled={curriculum.progress?.status === 'completed'}
+                >
+                  {curriculum.progress?.status === 'completed'
+                    ? '完了済み'
+                    : 'カリキュラムを完了'}
+                </Button>
+              ) : (
+                <Button
+                  rightIcon={<ChevronRightIcon className="w-4 h-4" />}
+                  onClick={handleNext}
+                >
+                  次のチャプター
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -468,6 +554,112 @@ export function CurriculumLearningPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* フィードバックモーダル */}
+      <Modal
+        isOpen={isFeedbackModalOpen}
+        onClose={closeFeedbackModal}
+        title="フィードバックを送信"
+        size="lg"
+      >
+        <div className="space-y-4">
+          {feedbackError && (
+            <Alert variant="error">{feedbackError}</Alert>
+          )}
+
+          <div className="bg-gray-50 rounded-lg p-4">
+            <p className="text-sm text-text-light mb-1">対象</p>
+            <p className="font-medium text-text">{currentChapter?.title || curriculum?.name}</p>
+          </div>
+
+          {/* フィードバックタイプ選択 */}
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              フィードバックの種類を選択してください
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {FEEDBACK_TYPES.map(({ type, label, icon: Icon }) => (
+                <button
+                  key={type}
+                  onClick={() => setFeedbackType(type)}
+                  className={`flex items-center gap-2 p-3 rounded-lg border transition-colors text-left
+                    ${feedbackType === type
+                      ? 'border-primary bg-primary-light text-primary'
+                      : 'border-border hover:border-primary/50 hover:bg-gray-50'
+                    }`}
+                >
+                  <Icon className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm font-medium">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 評価（任意） */}
+          {feedbackType && (
+            <div>
+              <label className="block text-sm font-medium text-text mb-2">
+                評価（任意）
+              </label>
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    onClick={() => setFeedbackRating(feedbackRating === star ? null : star)}
+                    className={`text-2xl transition-colors ${
+                      feedbackRating && star <= feedbackRating
+                        ? 'text-yellow-400'
+                        : 'text-gray-300 hover:text-yellow-300'
+                    }`}
+                  >
+                    ★
+                  </button>
+                ))}
+                {feedbackRating && (
+                  <span className="ml-2 text-sm text-text-light">
+                    {feedbackRating}点
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* コメント（任意） */}
+          {feedbackType && (
+            <div>
+              <label className="block text-sm font-medium text-text mb-1.5">
+                コメント（任意）
+              </label>
+              <textarea
+                className="w-full px-4 py-2.5 border border-border rounded-lg bg-white text-text
+                  transition-colors duration-200 min-h-[100px]
+                  focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-primary/50 focus:border-primary"
+                placeholder="詳細やご提案があればお書きください..."
+                value={feedbackComment}
+                onChange={(e) => setFeedbackComment(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+
+        <ModalFooter>
+          <Button
+            variant="ghost"
+            onClick={closeFeedbackModal}
+            disabled={isSubmittingFeedback}
+          >
+            キャンセル
+          </Button>
+          <Button
+            onClick={handleSubmitFeedback}
+            disabled={!feedbackType}
+            isLoading={isSubmittingFeedback}
+            leftIcon={<ChatBubbleLeftRightIcon className="w-4 h-4" />}
+          >
+            送信する
+          </Button>
+        </ModalFooter>
+      </Modal>
     </div>
   )
 }

@@ -1,7 +1,10 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
-import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
-import { getCorsHeaders, createPreflightResponse } from './shared/cors'
+import { getCorsHeaders } from './shared/cors'
+import { checkAuth, handlePreflight, checkMethod } from './shared/auth'
+import { ErrorResponses } from './shared/errors'
+import { validateUserInput, truncateText } from './shared/validation'
+import { FILE_CONSTANTS } from './shared/constants'
 
 // リクエスト型
 interface GenerationOptions {
@@ -37,7 +40,7 @@ interface GenerateRequest {
   durationMinutes?: number
   difficultyLevel?: 'beginner' | 'intermediate' | 'advanced' | 'mixed'
   options?: GenerationOptions
-  structure?: GeneratedStructure  // コンテンツ生成時に使用
+  structure?: GeneratedStructure
   step: 'structure' | 'content'
 }
 
@@ -50,156 +53,31 @@ interface GeneratedChapter {
   estimatedMinutes: number
 }
 
-// テキストを最大長に切り詰める
-function truncateText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text
-  return text.substring(0, maxLength) + '\n\n[... 資料の続きは省略されています ...]'
-}
-
-// 入力検証用の定数
-const INPUT_LIMITS = {
-  goal: { min: 10, max: 1000 },
-  targetAudience: { min: 1, max: 200 },
-  customInstructions: { min: 0, max: 500 },
-}
-
-// 入力サニタイゼーション：プロンプトインジェクション対策
-function sanitizeUserInput(input: string): string {
-  if (!input || typeof input !== 'string') return ''
-
-  // 危険なパターンを除去
-  let sanitized = input
-    // システムプロンプト/ロール切り替えの試行をブロック
-    .replace(/\[INST\]/gi, '')
-    .replace(/\[\/INST\]/gi, '')
-    .replace(/<<SYS>>/gi, '')
-    .replace(/<<\/SYS>>/gi, '')
-    .replace(/<\|im_start\|>/gi, '')
-    .replace(/<\|im_end\|>/gi, '')
-    .replace(/system:/gi, '')
-    .replace(/assistant:/gi, '')
-    .replace(/human:/gi, '')
-    .replace(/user:/gi, '')
-    // JSONペイロードインジェクションの防止
-    .replace(/}\s*{/g, '} {')
-    // 連続した改行を制限
-    .replace(/\n{4,}/g, '\n\n\n')
-    // 制御文字を除去（改行・タブは許可）
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
-
-  return sanitized.trim()
-}
-
-// 入力バリデーション
-function validateUserInput(
-  field: keyof typeof INPUT_LIMITS,
-  value: string | undefined,
-  required: boolean = false
-): { valid: boolean; sanitized?: string; error?: string } {
-  const limits = INPUT_LIMITS[field]
-
-  if (!value || value.trim().length === 0) {
-    if (required) {
-      return { valid: false, error: `${field}を入力してください` }
-    }
-    return { valid: true, sanitized: '' }
-  }
-
-  const sanitized = sanitizeUserInput(value)
-
-  if (sanitized.length < limits.min) {
-    return { valid: false, error: `${field}は${limits.min}文字以上で入力してください` }
-  }
-
-  if (sanitized.length > limits.max) {
-    return { valid: false, error: `${field}は${limits.max}文字以内で入力してください` }
-  }
-
-  return { valid: true, sanitized }
-}
-
 const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
-  const origin = event.headers.origin
-  const headers = getCorsHeaders(origin)
+  const headers = getCorsHeaders(event.headers.origin)
 
-  // Handle preflight
-  if (event.httpMethod === 'OPTIONS') {
-    return createPreflightResponse(origin)
-  }
+  // プリフライトチェック
+  const preflightResponse = handlePreflight(event)
+  if (preflightResponse) return preflightResponse
 
-  // 環境変数チェック
-  const supabaseUrl = process.env.VITE_SUPABASE_URL
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  // メソッドチェック
+  const methodError = checkMethod(event, 'POST')
+  if (methodError) return methodError
+
+  // Anthropic API Key チェック
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    console.error('Missing Supabase environment variables')
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'Server configuration error' }),
-    }
-  }
-
   if (!anthropicApiKey) {
     console.error('Missing Anthropic API key')
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'AI service not configured' }),
-    }
+    return ErrorResponses.serverError(headers, 'AIサービスが設定されていません')
   }
 
-  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  })
-
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    }
+  // 認証チェック（super_admin必須）
+  const authResult = await checkAuth(event, { requireSuperAdmin: true })
+  if (!authResult.success) {
+    return authResult.response
   }
 
-  // 認証チェック
-  const authHeader = event.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) {
-    return {
-      statusCode: 401,
-      headers,
-      body: JSON.stringify({ error: 'Unauthorized' }),
-    }
-  }
-
-  const token = authHeader.split(' ')[1]
-  const { data: { user: caller }, error: authError } = await supabaseAdmin.auth.getUser(token)
-
-  if (authError || !caller) {
-    return {
-      statusCode: 401,
-      headers,
-      body: JSON.stringify({ error: 'Invalid token' }),
-    }
-  }
-
-  // super_admin権限チェック
-  const { data: callerProfile } = await supabaseAdmin
-    .from('profiles')
-    .select('role')
-    .eq('id', caller.id)
-    .single()
-
-  if (callerProfile?.role !== 'super_admin') {
-    return {
-      statusCode: 403,
-      headers,
-      body: JSON.stringify({ error: 'Super admin access required' }),
-    }
-  }
+  const { supabase: supabaseAdmin } = authResult
 
   try {
     const body: GenerateRequest = JSON.parse(event.body || '{}')
@@ -317,7 +195,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     }
 
     // 資料テキストを最大長に切り詰める（トークン制限対策）
-    const maxTextLength = 80000 // 約20,000トークン相当
+    const maxTextLength = FILE_CONSTANTS.MAX_TEXT_LENGTH_FOR_AI
     const materialText = truncateText(material.extracted_text, maxTextLength)
 
     // 構成生成ステップ
@@ -513,7 +391,7 @@ ${chapter.learningObjectives.map((obj: string, i: number) => `${i + 1}. ${obj}`)
 チャプター番号: ${chapter.order} / ${structure.chapters.length}
 
 【参照資料】
-${truncateText(materialText, 40000)}`
+${truncateText(materialText, FILE_CONSTANTS.MAX_TEXT_LENGTH_FOR_CHAPTER)}`
 
         const userPrompt = `以下のチャプター構成と資料に基づいて、詳細な学習コンテンツを作成してください。
 ${chapterContext}

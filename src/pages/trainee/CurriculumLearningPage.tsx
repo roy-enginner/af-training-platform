@@ -19,6 +19,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { CheckCircleIcon as CheckCircleSolidIcon } from '@heroicons/react/24/solid'
 import { Card, CardContent, Badge, Button, Alert, Modal, ModalFooter } from '@/components/ui'
+import { ChatPanel } from '@/components/chat'
 import { useTraineeCurriculum } from '@/hooks/useTraineeCurricula'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -125,6 +126,7 @@ export function CurriculumLearningPage() {
     useTraineeCurriculum(id || '')
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0)
   const [showChapterList, setShowChapterList] = useState(false)
+  const [showChatPanel, setShowChatPanel] = useState(false)
   // フィードバック関連の状態
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false)
   const [feedbackType, setFeedbackType] = useState<FeedbackType | null>(null)
@@ -660,6 +662,30 @@ export function CurriculumLearningPage() {
           </Button>
         </ModalFooter>
       </Modal>
+
+      {/* AIチャットパネル（フローティング） */}
+      <div className="fixed bottom-6 right-6 z-40">
+        {showChatPanel ? (
+          <ChatPanel
+            curriculumId={curriculum?.id}
+            chapterId={currentChapter?.id}
+            curriculumName={curriculum?.name}
+            chapterTitle={currentChapter?.title}
+            sessionType="learning"
+            isOpen={showChatPanel}
+            onToggle={() => setShowChatPanel(false)}
+          />
+        ) : (
+          <button
+            onClick={() => setShowChatPanel(true)}
+            className="p-4 bg-primary text-white rounded-full shadow-lg hover:bg-primary-dark transition-colors flex items-center gap-2"
+            title="AIアシスタントに質問"
+          >
+            <ChatBubbleLeftRightIcon className="w-6 h-6" />
+            <span className="hidden sm:inline text-sm font-medium">AIに質問</span>
+          </button>
+        )}
+      </div>
     </div>
   )
 }

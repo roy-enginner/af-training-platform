@@ -9,12 +9,18 @@ import {
   ExclamationTriangleIcon,
   QuestionMarkCircleIcon,
   LightBulbIcon,
+  SparklesIcon,
+  ArrowPathIcon,
+  ChartPieIcon,
 } from '@heroicons/react/24/outline'
 import { Button, Input, Card, Table, Badge, Modal, ModalFooter, Alert } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { hasPermission } from '@/types/database'
 import type { CurriculumFeedback, FeedbackType } from '@/types/database'
+
+// タブタイプ
+type TabType = 'list' | 'stats' | 'suggestions'
 
 // フィードバックタイプのラベル
 const FEEDBACK_TYPE_LABELS: Record<FeedbackType, string> = {
@@ -62,10 +68,54 @@ interface FeedbackWithDetails extends CurriculumFeedback {
   }
 }
 
+// 統計データ型
+interface FeedbackStats {
+  overview: {
+    totalFeedback: number
+    pendingCount: number
+    resolvedCount: number
+    averageRating: number
+    feedbackGrowth: number
+  }
+  byType: Array<{ type: FeedbackType; count: number; percentage: number }>
+  byCurriculum: Array<{
+    curriculumId: string
+    curriculumName: string
+    totalFeedback: number
+    averageRating: number
+    byType: Record<FeedbackType, number>
+  }>
+  trends: Array<{
+    date: string
+    total: number
+    positive: number
+    negative: number
+    neutral: number
+  }>
+  recentSuggestions: Array<{
+    id: string
+    curriculumName: string
+    suggestion: string
+    generatedAt: string
+  }>
+}
+
+// AI改善サジェスト型
+interface AISuggestion {
+  curriculumId: string
+  curriculumName: string
+  suggestion: string
+  generatedAt: string
+}
+
 export function FeedbackPage() {
   const { role } = useAuth()
+  const [activeTab, setActiveTab] = useState<TabType>('list')
   const [feedback, setFeedback] = useState<FeedbackWithDetails[]>([])
+  const [stats, setStats] = useState<FeedbackStats | null>(null)
+  const [suggestions, setSuggestions] = useState<AISuggestion[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isGenerating, setIsGenerating] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterType, setFilterType] = useState<FeedbackType | ''>('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'resolved'>('all')
@@ -73,6 +123,7 @@ export function FeedbackPage() {
   const [selectedFeedback, setSelectedFeedback] = useState<FeedbackWithDetails | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [selectedCurriculumId, setSelectedCurriculumId] = useState<string>('')
 
   // フィードバック一覧を取得
   const fetchFeedback = useCallback(async () => {
@@ -108,9 +159,64 @@ export function FeedbackPage() {
     }
   }, [])
 
+  // 統計データを取得
+  const fetchStats = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+
+      const response = await fetch('/.netlify/functions/admin-feedback-stats', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+
+      if (!response.ok) throw new Error('統計の取得に失敗しました')
+      const data = await response.json()
+      setStats(data)
+    } catch (err) {
+      console.error('Error fetching stats:', err)
+      setError('統計の取得に失敗しました')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  // AI改善サジェストを生成
+  const generateSuggestion = async (curriculumId: string) => {
+    try {
+      setIsGenerating(true)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+
+      const response = await fetch('/.netlify/functions/admin-feedback-stats', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ curriculumId }),
+      })
+
+      if (!response.ok) throw new Error('サジェストの生成に失敗しました')
+      const data = await response.json()
+
+      setSuggestions(prev => [data.suggestion, ...prev.filter(s => s.curriculumId !== curriculumId)])
+      setSuccessMessage('AI改善サジェストを生成しました')
+    } catch (err) {
+      console.error('Error generating suggestion:', err)
+      setError('サジェストの生成に失敗しました')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
   useEffect(() => {
-    fetchFeedback()
-  }, [fetchFeedback])
+    if (activeTab === 'list') {
+      fetchFeedback()
+    } else if (activeTab === 'stats' || activeTab === 'suggestions') {
+      fetchStats()
+    }
+  }, [activeTab, fetchFeedback, fetchStats])
 
   // 権限チェック
   if (role && !hasPermission(role, 'canManageCurriculum')) {
@@ -134,8 +240,8 @@ export function FeedbackPage() {
     })
   }, [feedback, searchQuery, filterType, filterStatus])
 
-  // 統計
-  const stats = useMemo(() => {
+  // 簡易統計（一覧タブ用）
+  const simpleStats = useMemo(() => {
     const total = feedback.length
     const pending = feedback.filter(fb => !fb.is_resolved).length
     const resolved = feedback.filter(fb => fb.is_resolved).length
@@ -146,6 +252,15 @@ export function FeedbackPage() {
 
     return { total, pending, resolved, byType }
   }, [feedback])
+
+  // カリキュラム一覧（サジェスト生成用）
+  const curricula = useMemo(() => {
+    if (!stats?.byCurriculum) return []
+    return stats.byCurriculum.map(c => ({
+      id: c.curriculumId,
+      name: c.curriculumName,
+    }))
+  }, [stats])
 
   // フィードバックを解決済みにする
   const handleResolveFeedback = async (feedbackId: string) => {
@@ -293,55 +408,99 @@ export function FeedbackPage() {
         </Alert>
       )}
 
-      {/* 統計カード */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-              <ChatBubbleLeftRightIcon className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm text-text-light">総フィードバック</p>
-              <p className="text-2xl font-bold text-text">{stats.total}</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning/10">
-              <ExclamationTriangleIcon className="h-5 w-5 text-warning" />
-            </div>
-            <div>
-              <p className="text-sm text-text-light">未対応</p>
-              <p className="text-2xl font-bold text-text">{stats.pending}</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success/10">
-              <CheckCircleIcon className="h-5 w-5 text-success" />
-            </div>
-            <div>
-              <p className="text-sm text-text-light">解決済み</p>
-              <p className="text-2xl font-bold text-text">{stats.resolved}</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-error/10">
-              <ExclamationTriangleIcon className="h-5 w-5 text-error" />
-            </div>
-            <div>
-              <p className="text-sm text-text-light">エラー報告</p>
-              <p className="text-2xl font-bold text-text">{stats.byType.error}</p>
-            </div>
-          </div>
-        </Card>
-      </div>
+      {/* タブナビゲーション */}
+      <Card>
+        <div className="border-b border-border">
+          <nav className="flex gap-4 px-4">
+            <button
+              onClick={() => setActiveTab('list')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
+                activeTab === 'list'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-text-light hover:text-text'
+              }`}
+            >
+              <ChatBubbleLeftRightIcon className="w-4 h-4" />
+              フィードバック一覧
+            </button>
+            <button
+              onClick={() => setActiveTab('stats')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
+                activeTab === 'stats'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-text-light hover:text-text'
+              }`}
+            >
+              <ChartPieIcon className="w-4 h-4" />
+              統計
+            </button>
+            <button
+              onClick={() => setActiveTab('suggestions')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
+                activeTab === 'suggestions'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-text-light hover:text-text'
+              }`}
+            >
+              <SparklesIcon className="w-4 h-4" />
+              AI改善サジェスト
+            </button>
+          </nav>
+        </div>
+      </Card>
 
-      {/* フィルター */}
+      {/* 一覧タブ */}
+      {activeTab === 'list' && (
+        <>
+          {/* 統計カード */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                  <ChatBubbleLeftRightIcon className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-text-light">総フィードバック</p>
+                  <p className="text-2xl font-bold text-text">{simpleStats.total}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning/10">
+                  <ExclamationTriangleIcon className="h-5 w-5 text-warning" />
+                </div>
+                <div>
+                  <p className="text-sm text-text-light">未対応</p>
+                  <p className="text-2xl font-bold text-text">{simpleStats.pending}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success/10">
+                  <CheckCircleIcon className="h-5 w-5 text-success" />
+                </div>
+                <div>
+                  <p className="text-sm text-text-light">解決済み</p>
+                  <p className="text-2xl font-bold text-text">{simpleStats.resolved}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-error/10">
+                  <ExclamationTriangleIcon className="h-5 w-5 text-error" />
+                </div>
+                <div>
+                  <p className="text-sm text-text-light">エラー報告</p>
+                  <p className="text-2xl font-bold text-text">{simpleStats.byType.error}</p>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* フィルター */}
       <Card>
         <div className="p-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
@@ -498,6 +657,259 @@ export function FeedbackPage() {
           )}
         </ModalFooter>
       </Modal>
+        </>
+      )}
+
+      {/* 統計タブ */}
+      {activeTab === 'stats' && (
+        <>
+          {isLoading ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : stats ? (
+            <div className="space-y-6">
+              {/* 概要カード */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                      <ChatBubbleLeftRightIcon className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-text-light">総フィードバック</p>
+                      <p className="text-2xl font-bold text-text">{stats.overview.totalFeedback}</p>
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning/10">
+                      <ExclamationTriangleIcon className="h-5 w-5 text-warning" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-text-light">未対応</p>
+                      <p className="text-2xl font-bold text-text">{stats.overview.pendingCount}</p>
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success/10">
+                      <HandThumbUpIcon className="h-5 w-5 text-success" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-text-light">平均評価</p>
+                      <p className="text-2xl font-bold text-text">
+                        {stats.overview.averageRating.toFixed(1)}
+                        <span className="text-sm text-text-light">/5</span>
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary/10">
+                      <ChartPieIcon className="h-5 w-5 text-secondary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-text-light">先月比</p>
+                      <p className={`text-2xl font-bold ${stats.overview.feedbackGrowth >= 0 ? 'text-success' : 'text-error'}`}>
+                        {stats.overview.feedbackGrowth >= 0 ? '+' : ''}{stats.overview.feedbackGrowth.toFixed(0)}%
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+
+              {/* タイプ別内訳 */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-text mb-4">タイプ別内訳</h3>
+                <div className="space-y-3">
+                  {stats.byType.map(item => {
+                    const Icon = FEEDBACK_TYPE_ICONS[item.type]
+                    return (
+                      <div key={item.type} className="flex items-center gap-4">
+                        <div className="flex items-center gap-2 w-32">
+                          <Icon className="w-4 h-4" />
+                          <span className="text-sm text-text">{FEEDBACK_TYPE_LABELS[item.type]}</span>
+                        </div>
+                        <div className="flex-1">
+                          <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${
+                                item.type === 'helpful' ? 'bg-success' :
+                                item.type === 'error' ? 'bg-error' :
+                                'bg-primary'
+                              }`}
+                              style={{ width: `${item.percentage}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="w-20 text-right">
+                          <span className="text-sm font-medium text-text">{item.count}</span>
+                          <span className="text-sm text-text-light ml-1">({item.percentage.toFixed(0)}%)</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
+
+              {/* カリキュラム別フィードバック */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-text mb-4">カリキュラム別フィードバック</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-left text-sm text-text-light border-b border-border">
+                        <th className="pb-2 font-medium">カリキュラム</th>
+                        <th className="pb-2 font-medium text-right">件数</th>
+                        <th className="pb-2 font-medium text-right">評価</th>
+                        <th className="pb-2 font-medium text-right">👍</th>
+                        <th className="pb-2 font-medium text-right">❌</th>
+                        <th className="pb-2 font-medium text-right">💡</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {stats.byCurriculum.slice(0, 10).map(c => (
+                        <tr key={c.curriculumId} className="text-sm">
+                          <td className="py-3 font-medium text-text">{c.curriculumName}</td>
+                          <td className="py-3 text-right text-text">{c.totalFeedback}</td>
+                          <td className="py-3 text-right text-text">
+                            {'★'.repeat(Math.round(c.averageRating))}
+                            <span className="text-text-light ml-1">({c.averageRating.toFixed(1)})</span>
+                          </td>
+                          <td className="py-3 text-right text-success">{c.byType.helpful || 0}</td>
+                          <td className="py-3 text-right text-error">{c.byType.error || 0}</td>
+                          <td className="py-3 text-right text-primary">{c.byType.suggestion || 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+
+              {/* トレンド */}
+              {stats.trends.length > 0 && (
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold text-text mb-4">30日間のトレンド</h3>
+                  <div className="h-48 flex items-end gap-1">
+                    {stats.trends.map((day, i) => {
+                      const maxTotal = Math.max(...stats.trends.map(t => t.total), 1)
+                      const height = (day.total / maxTotal) * 100
+                      return (
+                        <div
+                          key={i}
+                          className="flex-1 bg-primary/70 rounded-t hover:bg-primary transition-colors cursor-pointer"
+                          style={{ height: `${height}%` }}
+                          title={`${day.date}: ${day.total}件`}
+                        />
+                      )
+                    })}
+                  </div>
+                  <div className="flex justify-between text-xs text-text-light mt-2">
+                    <span>{stats.trends[0]?.date}</span>
+                    <span>{stats.trends[stats.trends.length - 1]?.date}</span>
+                  </div>
+                </Card>
+              )}
+            </div>
+          ) : (
+            <Card className="p-8 text-center">
+              <p className="text-text-light">統計データがありません</p>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* AI改善サジェストタブ */}
+      {activeTab === 'suggestions' && (
+        <div className="space-y-6">
+          {/* サジェスト生成フォーム */}
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold text-text mb-4 flex items-center gap-2">
+              <SparklesIcon className="w-5 h-5 text-primary" />
+              AI改善サジェストを生成
+            </h3>
+            <p className="text-sm text-text-light mb-4">
+              カリキュラムのフィードバックを分析し、AIが改善提案を生成します。
+            </p>
+            <div className="flex gap-4">
+              <select
+                value={selectedCurriculumId}
+                onChange={(e) => setSelectedCurriculumId(e.target.value)}
+                className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="">カリキュラムを選択...</option>
+                {curricula.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <Button
+                onClick={() => selectedCurriculumId && generateSuggestion(selectedCurriculumId)}
+                disabled={!selectedCurriculumId || isGenerating}
+                leftIcon={isGenerating ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <SparklesIcon className="w-4 h-4" />}
+              >
+                {isGenerating ? '生成中...' : 'サジェストを生成'}
+              </Button>
+            </div>
+          </Card>
+
+          {/* 生成されたサジェスト一覧 */}
+          {suggestions.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-text">生成されたサジェスト</h3>
+              {suggestions.map((s, i) => (
+                <Card key={i} className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h4 className="font-medium text-text">{s.curriculumName}</h4>
+                      <p className="text-xs text-text-light">生成日時: {new Date(s.generatedAt).toLocaleString('ja-JP')}</p>
+                    </div>
+                    <Badge variant="primary" size="sm">
+                      <SparklesIcon className="w-3 h-3 mr-1" />
+                      AI生成
+                    </Badge>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-text whitespace-pre-wrap">{s.suggestion}</p>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* 最近のサジェスト（APIから取得） */}
+          {stats?.recentSuggestions && stats.recentSuggestions.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-text">保存されたサジェスト</h3>
+              {stats.recentSuggestions.map((s) => (
+                <Card key={s.id} className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h4 className="font-medium text-text">{s.curriculumName}</h4>
+                      <p className="text-xs text-text-light">生成日時: {new Date(s.generatedAt).toLocaleString('ja-JP')}</p>
+                    </div>
+                    <Badge variant="default" size="sm">保存済み</Badge>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-text whitespace-pre-wrap">{s.suggestion}</p>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {suggestions.length === 0 && (!stats?.recentSuggestions || stats.recentSuggestions.length === 0) && (
+            <Card className="p-8 text-center">
+              <SparklesIcon className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <p className="text-text-light">まだサジェストがありません</p>
+              <p className="text-sm text-text-light mt-1">カリキュラムを選択してサジェストを生成してください</p>
+            </Card>
+          )}
+        </div>
+      )}
     </motion.div>
   )
 }

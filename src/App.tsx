@@ -24,6 +24,8 @@ import { MaterialsPage } from '@/pages/admin/MaterialsPage'
 import { TemplatesPage } from '@/pages/admin/TemplatesPage'
 import { SeriesPage } from '@/pages/admin/SeriesPage'
 import { FeedbackPage } from '@/pages/admin/FeedbackPage'
+import { EscalationPage } from '@/pages/admin/EscalationPage'
+import { TokenUsagePage } from '@/pages/admin/TokenUsagePage'
 
 // Trainee Pages
 import { TraineeDashboardPage } from '@/pages/trainee/DashboardPage'
@@ -83,6 +85,8 @@ function App() {
               <Route path="materials" element={<MaterialsPage />} />
               <Route path="templates" element={<TemplatesPage />} />
               <Route path="feedback" element={<FeedbackPage />} />
+              <Route path="escalation" element={<EscalationPage />} />
+              <Route path="token-usage" element={<TokenUsagePage />} />
               <Route path="attributes" element={<AttributesPage />} />
             </Route>
 

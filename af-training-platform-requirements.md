@@ -3,7 +3,7 @@
 **プロジェクト名**: af-training-platform
 **ドメイン**: assist-frontier.site
 **作成日**: 2026/01/07
-**最終更新日**: 2026/01/09
+**最終更新日**: 2026/01/10
 **ステータス**: 実装中
 
 ---
@@ -15,7 +15,12 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 
 ### 1.2 主要機能
 - 管理者によるカリキュラム自動生成（Claude API使用）
+- **外部資料取り込み（PDF, URL, Text/Markdown, Excel）**
+- **シリーズ対応（複数日研修）**
+- **テンプレート機能・生成パラメータカスタマイズ**
+- **チャプター再生成・バージョン管理**
 - 研修生向けチャットUI（複数AIモデル対応）
+- **フィードバック収集機能**
 - 進捗管理・分析ダッシュボード
 - API利用量制限（日次トークン数ベース）
 - カリキュラムPDF出力
@@ -232,7 +237,90 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - **グループ単位**: 特定グループに割当
 - **個人単位**: 個別ユーザーに直接割当
 
-### 4.4 チャット機能
+### 4.4 外部資料取り込み機能（実装済み）
+
+#### 対応形式
+| 形式 | 抽出ライブラリ | 備考 |
+|------|--------------|------|
+| PDF | pdf-parse | 軽量・高速 |
+| URL | cheerio + html-to-text | Webページスクレイピング |
+| Excel | xlsx (SheetJS) | セル内容を構造化テキストに変換 |
+| Text/Markdown | 標準テキスト処理 | そのまま利用 |
+
+#### セキュリティ対策（実装済み）
+- **SSRF対策**: プライベートIP、ローカルホスト、メタデータエンドポイントをブロック
+- **ファイル検証**: MIMEタイプ、ファイルサイズ（最大50MB）、拡張子整合性チェック
+- **パストラバーサル防止**: ファイル名の検証
+- **入力サニタイズ**: プロンプトインジェクション対策
+
+#### 資料からの生成フロー
+1. 管理者が資料をアップロード（PDF/Excel）またはURL/テキストを入力
+2. テキスト抽出（非同期処理）
+3. 抽出完了後、生成パラメータを設定
+4. 2段階AI生成（構成生成 → 承認 → コンテンツ生成）
+
+### 4.5 シリーズ機能（実装済み）
+
+#### シリーズ構造
+```
+カリキュラムシリーズ
+├── Part 1: 基礎編（Day 1）
+│   └── カリキュラムA（60分）
+├── Part 2: 応用編（Day 2）
+│   └── カリキュラムB（60分）
+└── Part 3: 実践編（Day 3）
+    └── カリキュラムC（60分）
+```
+
+#### シリーズタイプ
+- **sequential**: 順番に受講（前提知識が必要）
+- **modular**: 独立受講可能（各パートが独立）
+
+### 4.6 テンプレート機能（実装済み）
+
+#### 生成パラメータ
+| パラメータ | 選択肢 | 説明 |
+|-----------|--------|------|
+| 内容の深さ | overview / standard / deep | 概要〜詳細の深さ |
+| 演習比率 | 0-100% | 解説と演習のバランス |
+| 例示の量 | minimal / moderate / abundant | 具体例の量 |
+| 言語スタイル | formal / casual / technical | トーン設定 |
+
+#### システムテンプレート
+- **新入社員向け**: 基礎から丁寧に、専門用語は解説付き
+- **ワークショップ型**: 演習中心、手を動かして学ぶ
+- **技術研修型**: 技術者向け詳細解説
+- **短時間集中型**: 要点を絞った効率的構成
+
+### 4.7 バージョン管理（実装済み）
+- カリキュラムの変更履歴をスナップショット保存
+- 旧バージョンへの復元機能
+- 変更概要の記録
+
+### 4.8 チャプター再生成（実装済み）
+- 特定チャプターのみAI再生成
+- 再生成時の指示入力（難易度調整、例示追加等）
+- 元資料との整合性維持
+
+### 4.9 フィードバック収集（実装済み）
+
+#### フィードバックタイプ
+| タイプ | 説明 |
+|--------|------|
+| helpful | 役に立った |
+| unclear | 分かりにくい |
+| too_easy | 簡単すぎる |
+| too_hard | 難しすぎる |
+| error | 誤りがある |
+| suggestion | 改善提案 |
+
+#### 対応フロー
+1. 研修生がフィードバック送信
+2. 管理者が内容確認
+3. 必要に応じてチャプター再生成
+4. 対応完了をマーク
+
+### 4.10 チャット機能（未実装）
 
 #### 実装方式
 - フルスクラッチ（Netlify Functions + 各AI API直接連携）
@@ -249,7 +337,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - 企業/グループごとの日次トークン数制限
 - 制限到達時のユーザーへの表示メッセージ
 
-### 4.5 ユーザー属性管理（実装済みDB構造）
+### 4.11 ユーザー属性管理（実装済みDB構造）
 
 #### 柔軟な属性システム
 - **属性定義マスタ**: `attribute_definitions` テーブル
@@ -263,7 +351,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 | skill_level | AIスキルレベル | select | 初級, 中級, 上級 |
 | tags | タグ | text | - |
 
-### 4.6 進捗管理・分析ダッシュボード
+### 4.12 進捗管理・分析ダッシュボード
 
 #### 研修生向け
 - 自分の進捗状況表示
@@ -277,7 +365,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - チャット利用統計（質問傾向等）
 - 研修完了率・離脱率分析
 
-### 4.7 通知機能
+### 4.13 通知機能
 
 #### リマインド通知（メール）
 - 日次で未完了チャプターをリマインド
@@ -288,7 +376,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - メール
 - Microsoft Teams
 
-### 4.8 PDF出力
+### 4.14 PDF出力
 
 #### 出力対象
 - カリキュラム内容（テキスト部分のみ）
@@ -297,7 +385,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 #### 用途
 - 集合研修での印刷配布用
 
-### 4.9 決済連携（Square）
+### 4.15 決済連携（Square）
 
 #### 実装範囲（半自動連携）
 - 管理画面からSquare請求書を発行
@@ -460,7 +548,141 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - UNIQUE(profile_id, curriculum_id)
 ```
 
-### 5.5 チャット関連テーブル（未実装）
+### 5.5 カリキュラム拡張テーブル（実装済み）
+
+#### curriculum_series（シリーズ管理）
+```sql
+- id: uuid (PK)
+- name: text
+- description: text (nullable)
+- series_type: text ('sequential' | 'modular')
+- target_audience: text (nullable)
+- difficulty_level: text (nullable)
+- total_duration_minutes: integer (nullable)
+- tags: text[] (nullable)
+- is_active: boolean (default: true)
+- created_by: uuid (FK -> profiles.id, nullable)
+- created_at: timestamptz
+- updated_at: timestamptz
+```
+
+#### source_materials（資料管理）
+```sql
+- id: uuid (PK)
+- name: text
+- material_type: text ('pdf' | 'url' | 'text' | 'markdown' | 'excel')
+- storage_path: text (nullable) -- Supabase Storage内パス
+- original_filename: text (nullable)
+- original_url: text (nullable)
+- file_size_bytes: bigint (nullable)
+- mime_type: text (nullable)
+- extracted_text: text (nullable) -- 抽出済みテキスト
+- extraction_status: text (default: 'pending') -- 'pending' | 'processing' | 'completed' | 'failed'
+- extraction_error: text (nullable)
+- extracted_at: timestamptz (nullable)
+- metadata: jsonb (nullable) -- ページ数、文字数等
+- tags: text[] (nullable)
+- uploaded_by: uuid (FK -> profiles.id, nullable)
+- is_active: boolean (default: true)
+- created_at: timestamptz
+- updated_at: timestamptz
+```
+
+#### curriculum_material_links（カリキュラム↔資料の多対多）
+```sql
+- id: uuid (PK)
+- curriculum_id: uuid (FK -> curricula.id, ON DELETE CASCADE)
+- material_id: uuid (FK -> source_materials.id, ON DELETE CASCADE)
+- reference_range: jsonb (nullable) -- {"start_page": 1, "end_page": 10}
+- usage_note: text (nullable)
+- created_at: timestamptz
+- UNIQUE(curriculum_id, material_id)
+```
+
+#### series_progress（シリーズ進捗）
+```sql
+- id: uuid (PK)
+- profile_id: uuid (FK -> profiles.id, ON DELETE CASCADE)
+- series_id: uuid (FK -> curriculum_series.id, ON DELETE CASCADE)
+- status: text (default: 'not_started') -- 'not_started' | 'in_progress' | 'completed'
+- completed_curricula_count: integer (default: 0)
+- total_curricula_count: integer (default: 0)
+- started_at: timestamptz (nullable)
+- completed_at: timestamptz (nullable)
+- updated_at: timestamptz
+- UNIQUE(profile_id, series_id)
+```
+
+#### curriculum_templates（テンプレート機能）
+```sql
+- id: uuid (PK)
+- name: text
+- description: text (nullable)
+- template_type: text ('structure' | 'prompt' | 'style')
+- content: jsonb -- テンプレート内容
+- is_system: boolean (default: false) -- システム提供テンプレート
+- created_by: uuid (FK -> profiles.id, nullable)
+- is_active: boolean (default: true)
+- sort_order: integer (default: 0)
+- created_at: timestamptz
+- updated_at: timestamptz
+```
+
+#### curriculum_versions（バージョン管理）
+```sql
+- id: uuid (PK)
+- curriculum_id: uuid (FK -> curricula.id, ON DELETE CASCADE)
+- version_number: integer
+- content_snapshot: jsonb -- カリキュラム+全チャプターのスナップショット
+- change_summary: text (nullable) -- 変更概要
+- created_by: uuid (FK -> profiles.id, nullable)
+- created_at: timestamptz
+- UNIQUE(curriculum_id, version_number)
+```
+
+#### curriculum_feedback（フィードバック収集）
+```sql
+- id: uuid (PK)
+- curriculum_id: uuid (FK -> curricula.id, ON DELETE CASCADE)
+- chapter_id: uuid (FK -> chapters.id, ON DELETE CASCADE, nullable)
+- profile_id: uuid (FK -> profiles.id, ON DELETE CASCADE)
+- feedback_type: text ('helpful' | 'unclear' | 'too_easy' | 'too_hard' | 'error' | 'suggestion')
+- rating: integer (nullable) -- 1-5の評価
+- comment: text (nullable)
+- is_resolved: boolean (default: false)
+- resolved_at: timestamptz (nullable)
+- resolved_by: uuid (FK -> profiles.id, nullable)
+- created_at: timestamptz
+```
+
+#### curricula テーブル追加カラム
+```sql
+- series_id: uuid (FK -> curriculum_series.id, ON DELETE SET NULL, nullable)
+- series_order: integer (nullable)
+- part_title: text (nullable)
+- source_material_id: uuid (FK -> source_materials.id, ON DELETE SET NULL, nullable)
+- template_id: uuid (FK -> curriculum_templates.id, ON DELETE SET NULL, nullable)
+- generation_params: jsonb (nullable)
+- current_version: integer (default: 1)
+```
+
+### 5.6 Supabase Storage（実装済み）
+
+#### source-materials バケット
+- **アクセス制御**: Private（RLSで制御）
+- **最大ファイルサイズ**: 50MB
+- **許可MIMEタイプ**: application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, text/plain, text/markdown
+
+#### フォルダ構造
+```
+source-materials/
+  ├── pdf/{year}/{month}/{uuid}_original.pdf
+  ├── excel/{year}/{month}/{uuid}_original.xlsx
+  ├── text/{year}/{month}/{uuid}.md
+  └── url-cache/{hash}.html
+```
+
+### 5.7 チャット関連テーブル（未実装）
 
 #### chat_sessions（チャットセッション）
 ```sql
@@ -520,6 +742,26 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 | `generate-curriculum-content` | POST | コンテンツ生成（Claude Sonnet 4.5使用）- 管理者のみ |
 | `generate-curriculum` | POST | 一括生成（レガシー）- 管理者のみ |
 
+### 6.4 資料・拡張Functions（実装済み）
+
+| Function | メソッド | 用途 |
+|----------|----------|------|
+| `upload-material` | POST | 資料メタデータ登録 - 管理者のみ |
+| `extract-text` | POST | PDF/Excelからテキスト抽出 - 管理者のみ |
+| `fetch-url-content` | POST | URLからコンテンツ取得（SSRF対策済み）- 管理者のみ |
+| `generate-curriculum-from-material` | POST | 資料ベースのカリキュラム生成 - 管理者のみ |
+| `regenerate-chapter` | POST | 特定チャプターの再生成 - 管理者のみ |
+
+### 6.5 共通モジュール（実装済み）
+
+| モジュール | 役割 |
+|-----------|------|
+| `shared/auth.ts` | 認証・認可チェック、Supabaseクライアント作成 |
+| `shared/errors.ts` | 共通エラー型・レスポンス生成 |
+| `shared/validation.ts` | 入力サニタイズ、ファイル検証 |
+| `shared/constants.ts` | 共通定数（ファイルサイズ、入力制限等） |
+| `shared/cors.ts` | CORS設定 |
+
 ---
 
 ## 7. 実装フェーズ計画
@@ -554,7 +796,25 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - [x] カリキュラム割当機能（企業/部署/グループ/個人）
 - [x] チャプター管理UI（作成・編集・削除・並べ替え）
 - [x] カリキュラム詳細ページ
-- [ ] バージョン管理
+
+### Phase 2.5: カリキュラム生成機能拡張 ✅ 完了
+- [x] 外部資料取り込み
+  - PDF対応（pdf-parse）
+  - URL対応（cheerio + html-to-text、SSRF対策済み）
+  - Excel対応（xlsx / SheetJS）
+  - Text/Markdown対応
+- [x] シリーズ機能（複数日研修対応）
+- [x] テンプレート機能・生成パラメータカスタマイズ
+- [x] チャプター再生成機能
+- [x] バージョン管理
+- [x] フィードバック収集機能
+- [x] セキュリティ強化
+  - SSRF対策（プライベートIP、DNS解決チェック）
+  - ファイルバリデーション（MIMEタイプ、サイズ、パストラバーサル防止）
+  - 入力サニタイズ（プロンプトインジェクション対策）
+- [x] 共通モジュール化（auth, errors, validation, constants）
+- [x] Supabase Storage設定（source-materialsバケット）
+- [x] RLSポリシー設定
 
 ### Phase 3: 受講者向け機能 ✅ 完了
 - [x] 受講者ダッシュボード（統計・割当カリキュラム表示）
@@ -562,11 +822,39 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - [x] カリキュラム学習ページ（チャプター別学習）
 - [x] 進捗管理機能（自動保存・完了ステータス管理）
 
-### Phase 4: AIチャット機能
-- [ ] チャットUI実装
-- [ ] AI API連携（OpenAI, Anthropic, Google）
-- [ ] 会話履歴保存
-- [ ] トークン使用量計測・制限
+### Phase 4: AIチャット機能 ← **次フェーズ**
+
+#### 4.1 データベース設計
+- [ ] chat_sessions テーブル作成
+- [ ] chat_messages テーブル作成
+- [ ] token_usage テーブル作成
+- [ ] RLSポリシー設定
+
+#### 4.2 バックエンド実装
+- [ ] `chat-send.ts` - メッセージ送信・AI応答取得
+- [ ] `chat-history.ts` - 会話履歴取得
+- [ ] `token-usage.ts` - トークン使用量確認
+- [ ] AI API統合
+  - OpenAI API連携（GPT-5.2シリーズ）
+  - Anthropic API連携（Claude 4.5シリーズ）
+  - Google AI API連携（Gemini 3シリーズ）
+- [ ] ストリーミング対応（SSE）
+- [ ] レート制限・トークン制限
+
+#### 4.3 フロントエンド実装
+- [ ] チャットUI基本実装
+  - メッセージ入力・送信
+  - 会話履歴表示
+  - ストリーミング表示
+- [ ] AIモデル切り替えUI
+- [ ] トークン使用量表示
+- [ ] 制限到達時の表示
+- [ ] 会話履歴管理（セッション一覧、削除）
+
+#### 4.4 チャプター連携
+- [ ] チャプター学習画面からのチャット起動
+- [ ] チャプターコンテキストの自動設定
+- [ ] ハンズオン課題のサポート機能
 
 ### Phase 5: レポート・分析機能
 - [ ] 管理者ダッシュボード強化
@@ -613,6 +901,10 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - 最新のパスワードポリシー
 - 初回ログイン時パスワード強制変更
 - ロールベースアクセス制御
+- **SSRF対策（プライベートIP・メタデータエンドポイントブロック）**
+- **ファイルアップロード検証（MIMEタイプ、サイズ、拡張子）**
+- **入力サニタイズ（プロンプトインジェクション対策）**
+- **パストラバーサル防止**
 
 ### 9.2 将来実装予定
 - 二要素認証（MFA）
@@ -700,3 +992,14 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 | 2026/01/09 | カリキュラム自動生成を2段階AI生成に改修（Opus 4.5で構成→承認→Sonnet 4.5でコンテンツ） |
 | 2026/01/09 | Netlify Functions追加（generate-curriculum-structure, generate-curriculum-content） |
 | 2026/01/09 | セキュリティ改善（環境変数チェック強化、エラー詳細の非公開化） |
+| 2026/01/10 | 外部資料取り込み機能実装（PDF, URL, Excel, Text/Markdown対応） |
+| 2026/01/10 | シリーズ機能実装（複数日研修対応） |
+| 2026/01/10 | テンプレート機能・生成パラメータカスタマイズ実装 |
+| 2026/01/10 | チャプター再生成機能実装 |
+| 2026/01/10 | バージョン管理機能実装 |
+| 2026/01/10 | フィードバック収集機能実装 |
+| 2026/01/10 | セキュリティ強化（SSRF対策、ファイルバリデーション、入力サニタイズ） |
+| 2026/01/10 | 共通モジュール化（auth.ts, errors.ts, validation.ts, constants.ts） |
+| 2026/01/10 | Supabase新規テーブル追加（curriculum_series, source_materials, curriculum_templates, curriculum_versions, curriculum_feedback等） |
+| 2026/01/10 | Supabase Storage設定（source-materialsバケット） |
+| 2026/01/10 | Phase 4（AIチャット機能）詳細計画追加 |

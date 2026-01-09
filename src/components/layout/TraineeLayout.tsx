@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Header } from './Header'
+import { QAChatBot } from '@/components/qa'
 import { AccessDeniedPage } from '@/pages/auth/AccessDeniedPage'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase'
@@ -111,6 +112,9 @@ export function TraineeLayout() {
       <main className="max-w-7xl mx-auto p-4 md:p-6">
         <Outlet />
       </main>
+
+      {/* QAチャットボット（全ページで利用可能） */}
+      <QAChatBot />
     </div>
   )
 }

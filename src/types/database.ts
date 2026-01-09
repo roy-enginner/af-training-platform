@@ -327,11 +327,202 @@ export interface CurriculumFeedback {
   is_resolved: boolean
   resolved_at: string | null
   resolved_by: string | null
+  // AI改善サジェスト（Phase 4追加）
+  ai_suggestion: string | null
+  ai_suggestion_generated_at: string | null
   created_at: string
 }
 
 export interface CurriculumFeedbackWithProfile extends CurriculumFeedback {
   profile: Pick<Profile, 'id' | 'name' | 'email'>
+}
+
+// ============================================
+// AIモデル (Phase 4)
+// ============================================
+export type AIProvider = 'openai' | 'anthropic' | 'google'
+
+export interface AIModel {
+  id: string
+  provider: AIProvider
+  model_id: string
+  display_name: string
+  input_token_cost: number | null
+  output_token_cost: number | null
+  max_context_tokens: number
+  supports_streaming: boolean
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+// ============================================
+// チャットセッション (Phase 4)
+// ============================================
+export type ChatSessionType = 'learning' | 'qa' | 'general'
+export type ChatSessionStatus = 'active' | 'completed' | 'escalated'
+
+export interface ChatSession {
+  id: string
+  profile_id: string
+  session_type: ChatSessionType
+  status: ChatSessionStatus
+  curriculum_id: string | null
+  chapter_id: string | null
+  ai_model_id: string | null
+  system_prompt: string | null
+  title: string | null
+  metadata: ChatSessionMetadata | null
+  escalated_at: string | null
+  escalation_reason: string | null
+  started_at: string
+  last_message_at: string
+  completed_at: string | null
+  created_at: string
+}
+
+export interface ChatSessionMetadata {
+  context?: string
+  tags?: string[]
+  [key: string]: unknown
+}
+
+export interface ChatSessionWithMessages extends ChatSession {
+  messages: ChatMessage[]
+  ai_model?: AIModel | null
+}
+
+// ============================================
+// チャットメッセージ (Phase 4)
+// ============================================
+export type ChatMessageRole = 'user' | 'assistant' | 'system'
+
+export interface ChatMessage {
+  id: string
+  session_id: string
+  role: ChatMessageRole
+  content: string
+  input_tokens: number | null
+  output_tokens: number | null
+  metadata: ChatMessageMetadata | null
+  created_at: string
+}
+
+export interface ChatMessageMetadata {
+  model_used?: string
+  response_time_ms?: number
+  error?: string
+  [key: string]: unknown
+}
+
+// ============================================
+// トークン使用量 (Phase 4)
+// ============================================
+export interface TokenUsage {
+  id: string
+  profile_id: string
+  group_id: string | null
+  company_id: string | null
+  ai_model_id: string | null
+  input_tokens: number
+  output_tokens: number
+  estimated_cost: number | null
+  usage_date: string
+  session_id: string | null
+  created_at: string
+}
+
+export interface TokenUsageAggregation {
+  date: string
+  total_input_tokens: number
+  total_output_tokens: number
+  total_cost: number
+  session_count: number
+}
+
+// ============================================
+// エスカレーション設定 (Phase 4)
+// ============================================
+export type EscalationChannel = 'email' | 'teams' | 'slack'
+export type EscalationTrigger = 'system_error' | 'bug_report' | 'urgent' | 'manual' | 'sentiment'
+
+export interface EscalationConfig {
+  id: string
+  company_id: string | null
+  group_id: string | null
+  name: string
+  description: string | null
+  channels: EscalationChannel[]
+  email_recipients: string[] | null
+  email_cc: string[] | null
+  teams_webhook_url: string | null
+  teams_channel_name: string | null
+  slack_webhook_url: string | null
+  slack_channel: string | null
+  triggers: EscalationTrigger[]
+  trigger_keywords: TriggerKeywords | null
+  is_active: boolean
+  priority: number
+  created_at: string
+  updated_at: string
+}
+
+export interface TriggerKeywords {
+  // トリガーごとのキーワードリスト
+  system_error?: string[]
+  bug_report?: string[]
+  urgent?: string[]
+  // センチメント分析の閾値
+  negative_sentiment_threshold?: number
+}
+
+// ============================================
+// エスカレーション履歴 (Phase 4)
+// ============================================
+export interface EscalationLog {
+  id: string
+  config_id: string | null
+  session_id: string | null
+  message_id: string | null
+  profile_id: string | null
+  trigger: EscalationTrigger
+  trigger_details: TriggerDetails | null
+  channels_notified: EscalationChannel[] | null
+  notification_results: NotificationResults | null
+  is_resolved: boolean
+  resolved_at: string | null
+  resolved_by: string | null
+  resolution_notes: string | null
+  created_at: string
+}
+
+export interface TriggerDetails {
+  matched_keywords?: string[]
+  sentiment_score?: number
+  original_message?: string
+  [key: string]: unknown
+}
+
+export interface NotificationResults {
+  email?: {
+    success: boolean
+    message_id?: string
+    error?: string
+  }
+  teams?: {
+    success: boolean
+    error?: string
+  }
+  slack?: {
+    success: boolean
+    error?: string
+  }
+}
+
+export interface EscalationLogWithRelations extends EscalationLog {
+  config: EscalationConfig | null
+  profile: Pick<Profile, 'id' | 'name' | 'email'> | null
+  session: Pick<ChatSession, 'id' | 'title' | 'session_type'> | null
 }
 
 // ============================================
@@ -641,6 +832,57 @@ export type Database = {
         }
         Update: Partial<Omit<CurriculumFeedback, 'id' | 'created_at'>>
       }
+      // Phase 4: AI チャット・エスカレーション
+      ai_models: {
+        Row: AIModel
+        Insert: Omit<AIModel, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<AIModel, 'id' | 'created_at'>>
+      }
+      chat_sessions: {
+        Row: ChatSession
+        Insert: Omit<ChatSession, 'id' | 'created_at'> & {
+          id?: string
+          created_at?: string
+        }
+        Update: Partial<Omit<ChatSession, 'id' | 'created_at'>>
+      }
+      chat_messages: {
+        Row: ChatMessage
+        Insert: Omit<ChatMessage, 'id' | 'created_at'> & {
+          id?: string
+          created_at?: string
+        }
+        Update: Partial<Omit<ChatMessage, 'id' | 'created_at'>>
+      }
+      token_usage: {
+        Row: TokenUsage
+        Insert: Omit<TokenUsage, 'id' | 'created_at'> & {
+          id?: string
+          created_at?: string
+        }
+        Update: Partial<Omit<TokenUsage, 'id' | 'created_at'>>
+      }
+      escalation_configs: {
+        Row: EscalationConfig
+        Insert: Omit<EscalationConfig, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<EscalationConfig, 'id' | 'created_at'>>
+      }
+      escalation_logs: {
+        Row: EscalationLog
+        Insert: Omit<EscalationLog, 'id' | 'created_at'> & {
+          id?: string
+          created_at?: string
+        }
+        Update: Partial<Omit<EscalationLog, 'id' | 'created_at'>>
+      }
     }
     Views: {
       [_ in never]: never
@@ -659,6 +901,13 @@ export type Database = {
       depth_level: DepthLevel
       example_frequency: ExampleFrequency
       tone_style: ToneStyle
+      // Phase 4
+      ai_provider: AIProvider
+      chat_session_type: ChatSessionType
+      chat_session_status: ChatSessionStatus
+      chat_message_role: ChatMessageRole
+      escalation_channel: EscalationChannel
+      escalation_trigger: EscalationTrigger
     }
     CompositeTypes: {
       [_ in never]: never

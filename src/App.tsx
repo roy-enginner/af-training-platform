@@ -20,6 +20,10 @@ import { DepartmentsPage } from '@/pages/admin/DepartmentsPage'
 import { CurriculaPage } from '@/pages/admin/CurriculaPage'
 import { CurriculumDetailPage } from '@/pages/admin/CurriculumDetailPage'
 import { AttributesPage } from '@/pages/admin/AttributesPage'
+import { MaterialsPage } from '@/pages/admin/MaterialsPage'
+import { TemplatesPage } from '@/pages/admin/TemplatesPage'
+import { SeriesPage } from '@/pages/admin/SeriesPage'
+import { FeedbackPage } from '@/pages/admin/FeedbackPage'
 
 // Trainee Pages
 import { TraineeDashboardPage } from '@/pages/trainee/DashboardPage'
@@ -75,6 +79,10 @@ function App() {
               <Route path="departments" element={<DepartmentsPage />} />
               <Route path="curricula" element={<CurriculaPage />} />
               <Route path="curricula/:id" element={<CurriculumDetailPage />} />
+              <Route path="series" element={<SeriesPage />} />
+              <Route path="materials" element={<MaterialsPage />} />
+              <Route path="templates" element={<TemplatesPage />} />
+              <Route path="feedback" element={<FeedbackPage />} />
               <Route path="attributes" element={<AttributesPage />} />
             </Route>
 

@@ -7,6 +7,10 @@ import {
   BuildingOfficeIcon,
   RectangleStackIcon,
   BookOpenIcon,
+  QueueListIcon,
+  DocumentDuplicateIcon,
+  DocumentTextIcon,
+  ChatBubbleLeftRightIcon,
   TagIcon,
   ChartBarIcon,
   XMarkIcon,
@@ -44,6 +48,22 @@ export function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }: Side
     // Curriculum page only for super_admin
     ...(role && hasPermission(role, 'canManageCurriculum')
       ? [{ path: '/admin/curricula', icon: BookOpenIcon, label: 'カリキュラム管理' }]
+      : []),
+    // Series page only for super_admin
+    ...(role && hasPermission(role, 'canManageCurriculum')
+      ? [{ path: '/admin/series', icon: QueueListIcon, label: 'シリーズ管理' }]
+      : []),
+    // Materials page only for super_admin
+    ...(role && hasPermission(role, 'canManageCurriculum')
+      ? [{ path: '/admin/materials', icon: DocumentDuplicateIcon, label: '資料管理' }]
+      : []),
+    // Templates page only for super_admin
+    ...(role && hasPermission(role, 'canManageCurriculum')
+      ? [{ path: '/admin/templates', icon: DocumentTextIcon, label: 'テンプレート管理' }]
+      : []),
+    // Feedback page only for super_admin
+    ...(role && hasPermission(role, 'canManageCurriculum')
+      ? [{ path: '/admin/feedback', icon: ChatBubbleLeftRightIcon, label: 'フィードバック管理' }]
       : []),
     // Attributes page only for super_admin
     ...(role && hasPermission(role, 'canManageAttributes')

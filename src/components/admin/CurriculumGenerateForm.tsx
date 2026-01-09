@@ -72,6 +72,7 @@ const DIFFICULTY_LABELS: Record<DifficultyLevel, string> = {
   beginner: '初級',
   intermediate: '中級',
   advanced: '上級',
+  mixed: '混合',
 }
 
 type Step = 'input' | 'structure' | 'content' | 'complete'

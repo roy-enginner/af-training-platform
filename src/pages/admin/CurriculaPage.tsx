@@ -10,11 +10,13 @@ import {
   TagIcon,
   UserGroupIcon,
   SparklesIcon,
+  DocumentDuplicateIcon,
 } from '@heroicons/react/24/outline'
 import { Button, Input, Card, Table, Badge, Modal, ModalFooter, Alert } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { CurriculumForm, type CurriculumFormSubmitData } from '@/components/admin/CurriculumForm'
 import { CurriculumGenerateForm } from '@/components/admin/CurriculumGenerateForm'
+import { CurriculumFromMaterialForm } from '@/components/admin/CurriculumFromMaterialForm'
 import { CurriculumAssignmentManager } from '@/components/admin/CurriculumAssignmentManager'
 import { useAuth } from '@/hooks/useAuth'
 import { hasPermission } from '@/types/database'
@@ -45,12 +47,14 @@ const DIFFICULTY_LABELS: Record<DifficultyLevel, string> = {
   beginner: '初級',
   intermediate: '中級',
   advanced: '上級',
+  mixed: '混合',
 }
 
-const DIFFICULTY_COLORS: Record<DifficultyLevel, 'success' | 'warning' | 'error'> = {
+const DIFFICULTY_COLORS: Record<DifficultyLevel, 'success' | 'warning' | 'error' | 'primary'> = {
   beginner: 'success',
   intermediate: 'warning',
   advanced: 'error',
+  mixed: 'primary',
 }
 
 export function CurriculaPage() {
@@ -66,6 +70,7 @@ export function CurriculaPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false)
+  const [isFromMaterialModalOpen, setIsFromMaterialModalOpen] = useState(false)
   const [selectedCurriculum, setSelectedCurriculum] = useState<CurriculumWithCount | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -155,7 +160,7 @@ export function CurriculaPage() {
           comparison = a.content_type.localeCompare(b.content_type)
           break
         case 'difficulty':
-          const difficultyOrder = { beginner: 1, intermediate: 2, advanced: 3 }
+          const difficultyOrder: Record<DifficultyLevel, number> = { beginner: 1, intermediate: 2, advanced: 3, mixed: 4 }
           comparison = difficultyOrder[a.difficulty_level] - difficultyOrder[b.difficulty_level]
           break
         case 'sortOrder':
@@ -397,6 +402,13 @@ export function CurriculaPage() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
+            leftIcon={<DocumentDuplicateIcon className="w-5 h-5" />}
+            onClick={() => setIsFromMaterialModalOpen(true)}
+          >
+            資料から生成
+          </Button>
+          <Button
+            variant="outline"
             leftIcon={<SparklesIcon className="w-5 h-5" />}
             onClick={() => setIsGenerateModalOpen(true)}
           >
@@ -623,6 +635,50 @@ export function CurriculaPage() {
             }
           }}
           onCancel={() => setIsGenerateModalOpen(false)}
+        />
+      </Modal>
+
+      {/* Generate from Material modal */}
+      <Modal
+        isOpen={isFromMaterialModalOpen}
+        onClose={() => setIsFromMaterialModalOpen(false)}
+        title="資料からカリキュラム生成"
+        size="lg"
+      >
+        <CurriculumFromMaterialForm
+          onGenerated={async (generated) => {
+            try {
+              // Calculate total duration
+              const totalMinutes = generated.chapters.reduce(
+                (sum, ch) => sum + ch.estimatedMinutes,
+                0
+              )
+
+              // Create the curriculum with source_material_id
+              const { error: createError } = await supabase.from('curricula').insert({
+                name: generated.name,
+                description: generated.description,
+                content_type: 'document' as ContentType,
+                content_url: null,
+                duration_minutes: totalMinutes,
+                difficulty_level: generated.difficultyLevel,
+                tags: generated.tags,
+                sort_order: curricula.length,
+                is_active: true,
+                source_material_id: generated.sourceMaterialId || null,
+              })
+
+              if (createError) throw createError
+
+              setSuccessMessage('カリキュラムを作成しました')
+              setIsFromMaterialModalOpen(false)
+              fetchCurricula()
+            } catch (err) {
+              console.error('Error creating curriculum:', err)
+              setError('カリキュラムの作成に失敗しました')
+            }
+          }}
+          onCancel={() => setIsFromMaterialModalOpen(false)}
         />
       </Modal>
     </div>

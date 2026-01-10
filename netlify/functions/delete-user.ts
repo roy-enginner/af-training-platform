@@ -1,6 +1,9 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 import { getCorsHeaders, createPreflightResponse } from './shared/cors'
+import { ErrorResponses } from './shared/errors'
+
+const FUNCTION_NAME = 'delete-user'
 
 const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
   const origin = event.headers.origin
@@ -16,12 +19,8 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!supabaseUrl || !supabaseServiceKey) {
-    console.error('Missing environment variables')
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'Server configuration error' }),
-    }
+    console.error('Missing environment variables:', { supabaseUrl: !!supabaseUrl, supabaseServiceKey: !!supabaseServiceKey })
+    return ErrorResponses.configError(headers, FUNCTION_NAME, 'VITE_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY')
   }
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
@@ -32,32 +31,20 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   })
 
   if (event.httpMethod !== 'DELETE') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    }
+    return ErrorResponses.badRequest(headers, FUNCTION_NAME, `HTTPメソッド ${event.httpMethod} は許可されていません。DELETEを使用してください。`)
   }
 
   // Verify authorization
   const authHeader = event.headers.authorization
   if (!authHeader?.startsWith('Bearer ')) {
-    return {
-      statusCode: 401,
-      headers,
-      body: JSON.stringify({ error: 'Unauthorized' }),
-    }
+    return ErrorResponses.unauthorized(headers, FUNCTION_NAME, 'Authorizationヘッダーが必要です。')
   }
 
   const token = authHeader.split(' ')[1]
   const { data: { user: caller }, error: authError } = await supabaseAdmin.auth.getUser(token)
 
   if (authError || !caller) {
-    return {
-      statusCode: 401,
-      headers,
-      body: JSON.stringify({ error: 'Invalid token' }),
-    }
+    return ErrorResponses.invalidToken(headers, FUNCTION_NAME)
   }
 
   // Verify caller is admin
@@ -68,11 +55,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     .single()
 
   if (callerProfile?.role !== 'super_admin' && callerProfile?.role !== 'group_admin') {
-    return {
-      statusCode: 403,
-      headers,
-      body: JSON.stringify({ error: 'Admin access required' }),
-    }
+    return ErrorResponses.groupAdminRequired(headers, FUNCTION_NAME)
   }
 
   try {
@@ -80,20 +63,12 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     const userId = body.userId
 
     if (!userId) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Missing userId' }),
-      }
+      return ErrorResponses.validationError(headers, FUNCTION_NAME, '削除対象のユーザーID（userId）が必要です。')
     }
 
     // Prevent self-deletion
     if (userId === caller.id) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Cannot delete yourself' }),
-      }
+      return ErrorResponses.badRequest(headers, FUNCTION_NAME, '自分自身を削除することはできません。')
     }
 
     // Check target user's role to prevent privilege escalation
@@ -106,11 +81,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     // group_admin cannot delete super_admin or other group_admin
     if (callerProfile?.role === 'group_admin') {
       if (targetProfile?.role === 'super_admin' || targetProfile?.role === 'group_admin') {
-        return {
-          statusCode: 403,
-          headers,
-          body: JSON.stringify({ error: 'group_adminは上位権限のユーザーを削除できません' }),
-        }
+        return ErrorResponses.forbidden(headers, FUNCTION_NAME, 'group_adminは上位権限（super_adminまたは他のgroup_admin）のユーザーを削除できません。')
       }
     }
 
@@ -118,11 +89,12 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId)
 
     if (deleteError) {
-      return {
-        statusCode: 400,
+      return ErrorResponses.databaseError(
         headers,
-        body: JSON.stringify({ error: deleteError.message }),
-      }
+        FUNCTION_NAME,
+        'Auth User削除',
+        `認証ユーザーの削除に失敗しました: ${deleteError.message}`
+      )
     }
 
     return {
@@ -132,11 +104,12 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     }
   } catch (error) {
     console.error('Error deleting user:', error)
-    return {
-      statusCode: 500,
+    return ErrorResponses.serverError(
       headers,
-      body: JSON.stringify({ error: 'Internal server error' }),
-    }
+      FUNCTION_NAME,
+      'リクエスト処理',
+      `予期しないエラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`
+    )
   }
 }
 

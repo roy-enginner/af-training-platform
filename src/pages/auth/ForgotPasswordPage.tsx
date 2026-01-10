@@ -32,7 +32,7 @@ export function ForgotPasswordPage() {
     const { error: resetError } = await resetPassword(data.email)
 
     if (resetError) {
-      setError('パスワードリセットメールの送信に失敗しました')
+      setError(`[パスワードリセット/メール送信] パスワードリセットメールの送信に失敗しました。メールアドレスが正しいか確認してください。詳細: ${resetError}`)
       return
     }
 

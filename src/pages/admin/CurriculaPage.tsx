@@ -108,7 +108,8 @@ export function CurriculaPage() {
       setCurricula(curriculaWithCounts)
     } catch (err) {
       console.error('Error fetching curricula:', err)
-      setError('カリキュラムの取得に失敗しました')
+      const detail = err instanceof Error ? err.message : '不明なエラー'
+      setError(`[カリキュラム管理/一覧取得] カリキュラム一覧の取得に失敗しました: ${detail}`)
     } finally {
       setIsLoading(false)
     }
@@ -196,7 +197,8 @@ export function CurriculaPage() {
       fetchCurricula()
     } catch (err) {
       console.error('Error creating curriculum:', err)
-      setError('カリキュラムの作成に失敗しました')
+      const detail = err instanceof Error ? err.message : '不明なエラー'
+      setError(`[カリキュラム管理/作成] カリキュラムの作成に失敗しました: ${detail}`)
     }
   }
 
@@ -228,7 +230,8 @@ export function CurriculaPage() {
       fetchCurricula()
     } catch (err) {
       console.error('Error updating curriculum:', err)
-      setError('カリキュラムの更新に失敗しました')
+      const detail = err instanceof Error ? err.message : '不明なエラー'
+      setError(`[カリキュラム管理/更新] カリキュラムの更新に失敗しました: ${detail}`)
     }
   }
 
@@ -239,7 +242,7 @@ export function CurriculaPage() {
     try {
       // Check if curriculum has assignments
       if (selectedCurriculum.assignmentCount > 0) {
-        setError('割り当てがあるカリキュラムは削除できません')
+        setError(`[カリキュラム管理/削除] 割り当てがあるカリキュラムは削除できません（${selectedCurriculum.assignmentCount}件のグループに割り当て中）。先に割り当てを解除してください。`)
         setIsDeleteModalOpen(false)
         return
       }
@@ -257,7 +260,8 @@ export function CurriculaPage() {
       fetchCurricula()
     } catch (err) {
       console.error('Error deleting curriculum:', err)
-      setError('カリキュラムの削除に失敗しました')
+      const detail = err instanceof Error ? err.message : '不明なエラー'
+      setError(`[カリキュラム管理/削除] カリキュラムの削除に失敗しました: ${detail}`)
     }
   }
 
@@ -639,7 +643,8 @@ export function CurriculaPage() {
               fetchCurricula()
             } catch (err) {
               console.error('Error creating curriculum:', err)
-              setError('カリキュラムの作成に失敗しました')
+              const detail = err instanceof Error ? err.message : '不明なエラー'
+              setError(`[カリキュラム管理/AI生成→保存] 生成したカリキュラムのDB保存に失敗しました: ${detail}`)
             }
           }}
           onCancel={() => setIsGenerateModalOpen(false)}
@@ -683,7 +688,8 @@ export function CurriculaPage() {
               fetchCurricula()
             } catch (err) {
               console.error('Error creating curriculum:', err)
-              setError('カリキュラムの作成に失敗しました')
+              const detail = err instanceof Error ? err.message : '不明なエラー'
+              setError(`[カリキュラム管理/資料生成→保存] 資料から生成したカリキュラムのDB保存に失敗しました: ${detail}`)
             }
           }}
           onCancel={() => setIsFromMaterialModalOpen(false)}

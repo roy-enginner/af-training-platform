@@ -1,6 +1,9 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 import { getCorsHeaders, createPreflightResponse } from './shared/cors'
+import { ErrorResponses } from './shared/errors'
+
+const FUNCTION_NAME = 'create-user'
 
 interface CreateUserRequest {
   email: string
@@ -24,12 +27,8 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!supabaseUrl || !supabaseServiceKey) {
-    console.error('Missing environment variables')
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'Server configuration error' }),
-    }
+    console.error('Missing environment variables:', { supabaseUrl: !!supabaseUrl, supabaseServiceKey: !!supabaseServiceKey })
+    return ErrorResponses.configError(headers, FUNCTION_NAME, 'VITE_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY')
   }
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
@@ -40,32 +39,20 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   })
 
   if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    }
+    return ErrorResponses.badRequest(headers, FUNCTION_NAME, `HTTPメソッド ${event.httpMethod} は許可されていません。POSTを使用してください。`)
   }
 
   // Verify authorization
   const authHeader = event.headers.authorization
   if (!authHeader?.startsWith('Bearer ')) {
-    return {
-      statusCode: 401,
-      headers,
-      body: JSON.stringify({ error: 'Unauthorized' }),
-    }
+    return ErrorResponses.unauthorized(headers, FUNCTION_NAME, 'Authorizationヘッダーが必要です。')
   }
 
   const token = authHeader.split(' ')[1]
   const { data: { user: caller }, error: authError } = await supabaseAdmin.auth.getUser(token)
 
   if (authError || !caller) {
-    return {
-      statusCode: 401,
-      headers,
-      body: JSON.stringify({ error: 'Invalid token' }),
-    }
+    return ErrorResponses.invalidToken(headers, FUNCTION_NAME)
   }
 
   // Verify caller is admin
@@ -76,22 +63,26 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     .single()
 
   if (callerProfile?.role !== 'super_admin' && callerProfile?.role !== 'group_admin') {
-    return {
-      statusCode: 403,
-      headers,
-      body: JSON.stringify({ error: 'Admin access required' }),
-    }
+    return ErrorResponses.groupAdminRequired(headers, FUNCTION_NAME)
   }
 
   try {
     const body: CreateUserRequest = JSON.parse(event.body || '{}')
 
-    if (!body.email || !body.password || !body.name || !body.role) {
-      return {
-        statusCode: 400,
+    // 必須フィールドの検証
+    const missingFields: string[] = []
+    if (!body.email) missingFields.push('email')
+    if (!body.password) missingFields.push('password')
+    if (!body.name) missingFields.push('name')
+    if (!body.role) missingFields.push('role')
+
+    if (missingFields.length > 0) {
+      return ErrorResponses.validationError(
         headers,
-        body: JSON.stringify({ error: 'Missing required fields' }),
-      }
+        FUNCTION_NAME,
+        `必須フィールドが不足しています: ${missingFields.join(', ')}`,
+        { missingFields }
+      )
     }
 
     // Create auth user
@@ -102,11 +93,12 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     })
 
     if (createError) {
-      return {
-        statusCode: 400,
+      return ErrorResponses.databaseError(
         headers,
-        body: JSON.stringify({ error: createError.message }),
-      }
+        FUNCTION_NAME,
+        'Auth User作成',
+        `認証ユーザーの作成に失敗しました: ${createError.message}`
+      )
     }
 
     // Update profile (created by database trigger)
@@ -127,11 +119,12 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       console.error('Profile update error:', profileError)
       // Rollback: delete auth user if profile update fails
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
-      return {
-        statusCode: 400,
+      return ErrorResponses.databaseError(
         headers,
-        body: JSON.stringify({ error: profileError.message }),
-      }
+        FUNCTION_NAME,
+        'Profile更新',
+        `プロフィールの更新に失敗しました（認証ユーザーはロールバック済み）: ${profileError.message}`
+      )
     }
 
     return {
@@ -140,11 +133,13 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       body: JSON.stringify({ user: authData.user, profile }),
     }
   } catch (error) {
-    return {
-      statusCode: 500,
+    console.error('Unexpected error in create-user:', error)
+    return ErrorResponses.serverError(
       headers,
-      body: JSON.stringify({ error: 'Internal server error' }),
-    }
+      FUNCTION_NAME,
+      'リクエスト処理',
+      `予期しないエラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`
+    )
   }
 }
 

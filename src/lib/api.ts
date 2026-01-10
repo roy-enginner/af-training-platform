@@ -68,7 +68,7 @@ export async function apiCall<T>(
     }
 
     throw new ApiError(
-      `サーバーエラーが発生しました (${response.status})。管理者に連絡してください。`,
+      `[API通信] サーバーエラーが発生しました (HTTP ${response.status})。レスポンスがJSONではありません。Netlifyの関数ログを確認してください。`,
       response.status,
       'SERVER_ERROR'
     )

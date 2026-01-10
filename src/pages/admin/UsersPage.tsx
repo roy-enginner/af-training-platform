@@ -73,7 +73,8 @@ export function UsersPage() {
       setUsers(data as ProfileWithRelations[])
     } catch (err) {
       console.error('Error fetching users:', err)
-      setError('ユーザーの取得に失敗しました')
+      const detail = err instanceof Error ? err.message : '不明なエラー'
+      setError(`[ユーザー管理/一覧取得] ユーザー一覧の取得に失敗しました: ${detail}`)
     } finally {
       setIsLoading(false)
     }
@@ -249,7 +250,8 @@ export function UsersPage() {
       fetchUsers()
     } catch (err) {
       console.error('Error creating user:', err)
-      setError(err instanceof Error ? err.message : 'ユーザーの作成に失敗しました')
+      const errorMsg = err instanceof Error ? err.message : '不明なエラー'
+      setError(errorMsg.startsWith('[') ? errorMsg : `[ユーザー管理/作成] ユーザーの作成に失敗しました: ${errorMsg}`)
     }
   }
 
@@ -281,7 +283,8 @@ export function UsersPage() {
       fetchUsers()
     } catch (err) {
       console.error('Error updating user:', err)
-      setError('ユーザーの更新に失敗しました')
+      const detail = err instanceof Error ? err.message : '不明なエラー'
+      setError(`[ユーザー管理/更新] ユーザーの更新に失敗しました: ${detail}`)
     }
   }
 
@@ -321,7 +324,8 @@ export function UsersPage() {
       fetchUsers()
     } catch (err) {
       console.error('Error deleting user:', err)
-      setError(err instanceof Error ? err.message : 'ユーザーの削除に失敗しました')
+      const errorMsg = err instanceof Error ? err.message : '不明なエラー'
+      setError(errorMsg.startsWith('[') ? errorMsg : `[ユーザー管理/削除] ユーザーの削除に失敗しました: ${errorMsg}`)
     }
   }
 
@@ -387,7 +391,8 @@ export function UsersPage() {
       fetchUsers()
     } catch (err) {
       console.error('Error resetting password:', err)
-      setError(err instanceof Error ? err.message : 'パスワードのリセットに失敗しました')
+      const errorMsg = err instanceof Error ? err.message : '不明なエラー'
+      setError(errorMsg.startsWith('[') ? errorMsg : `[ユーザー管理/パスワードリセット] パスワードのリセットに失敗しました: ${errorMsg}`)
     } finally {
       setIsResettingPassword(false)
     }
@@ -538,7 +543,8 @@ export function UsersPage() {
       fetchGroups()
     } catch (err) {
       console.error('Error importing users:', err)
-      setError('CSVインポートに失敗しました')
+      const detail = err instanceof Error ? err.message : '不明なエラー'
+      setError(`[ユーザー管理/CSVインポート] CSVインポートに失敗しました: ${detail}`)
     }
   }
 

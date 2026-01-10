@@ -129,14 +129,15 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error?.message || 'セッションの読み込みに失敗しました')
+        throw new Error(errorData.error?.message || `[チャット/セッション読み込み] セッションの読み込みに失敗しました (HTTP ${response.status})`)
       }
 
       const data: { session: ChatSessionWithMessages } = await response.json()
       setSession(data.session)
       setMessages(data.session.messages || [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'エラーが発生しました')
+      const message = err instanceof Error ? err.message : '[チャット/セッション読み込み] 予期しないエラーが発生しました'
+      setError(message)
     } finally {
       setIsLoading(false)
     }
@@ -168,7 +169,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error?.message || 'セッションの作成に失敗しました')
+        throw new Error(errorData.error?.message || `[チャット/セッション作成] セッションの作成に失敗しました (HTTP ${response.status})`)
       }
 
       const data: { session: ChatSession } = await response.json()
@@ -176,7 +177,8 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
       setMessages([])
       return data.session.id
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'エラーが発生しました')
+      const message = err instanceof Error ? err.message : '[チャット/セッション作成] 予期しないエラーが発生しました'
+      setError(message)
       return null
     } finally {
       setIsLoading(false)
@@ -233,13 +235,13 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error?.message || 'メッセージの送信に失敗しました')
+        throw new Error(errorData.error?.message || `[チャット/メッセージ送信] サーバーからエラーが返されました (HTTP ${response.status})`)
       }
 
       // SSEストリーミング処理
       const reader = response.body?.getReader()
       if (!reader) {
-        throw new Error('ストリームの読み取りに失敗しました')
+        throw new Error('[チャット/ストリーム処理] レスポンスボディの読み取りに失敗しました。ネットワーク接続を確認してください。')
       }
 
       const decoder = new TextDecoder()
@@ -298,7 +300,8 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         // キャンセルされた場合
         return
       }
-      setError(err instanceof Error ? err.message : 'エラーが発生しました')
+      const message = err instanceof Error ? err.message : '[チャット/メッセージ送信] 予期しないエラーが発生しました'
+      setError(message)
       // エラー時はユーザーメッセージも削除
       setMessages((prev) => prev.filter((m) => m.id !== userMessage.id))
     } finally {
@@ -376,14 +379,15 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error?.message || 'セッション一覧の取得に失敗しました')
+        throw new Error(errorData.error?.message || `[チャット/セッション一覧] セッション一覧の取得に失敗しました (HTTP ${response.status})`)
       }
 
       const data = await response.json()
       setSessions(data.sessions || [])
       setTotal(data.total || 0)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'エラーが発生しました')
+      const message = err instanceof Error ? err.message : '[チャット/セッション一覧] 予期しないエラーが発生しました'
+      setError(message)
     } finally {
       setIsLoading(false)
     }
@@ -409,14 +413,15 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error?.message || 'セッションの削除に失敗しました')
+        throw new Error(errorData.error?.message || `[チャット/セッション削除] セッションの削除に失敗しました (HTTP ${response.status})`)
       }
 
       // 一覧から削除
       setSessions((prev) => prev.filter((s) => s.id !== sessionId))
       setTotal((prev) => prev - 1)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'エラーが発生しました')
+      const message = err instanceof Error ? err.message : '[チャット/セッション削除] 予期しないエラーが発生しました'
+      setError(message)
     }
   }, [])
 

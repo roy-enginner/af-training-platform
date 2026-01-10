@@ -44,3 +44,6 @@ supabase/.temp
 
 # Testing
 coverage
+
+# PR Reviews
+PR-*-review.md

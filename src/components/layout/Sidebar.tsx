@@ -15,6 +15,8 @@ import {
   ChartBarIcon,
   XMarkIcon,
   Bars3BottomLeftIcon,
+  BellAlertIcon,
+  CurrencyYenIcon,
 } from '@heroicons/react/24/outline'
 import { useAuth } from '@/hooks/useAuth'
 import { hasPermission } from '@/types/database'
@@ -64,6 +66,14 @@ export function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }: Side
     // Feedback page only for super_admin
     ...(role && hasPermission(role, 'canManageCurriculum')
       ? [{ path: '/admin/feedback', icon: ChatBubbleLeftRightIcon, label: 'フィードバック管理' }]
+      : []),
+    // Escalation page only for super_admin
+    ...(role && hasPermission(role, 'canManageCompanies')
+      ? [{ path: '/admin/escalation', icon: BellAlertIcon, label: 'エスカレーション管理' }]
+      : []),
+    // Token usage page only for super_admin
+    ...(role && hasPermission(role, 'canManageCompanies')
+      ? [{ path: '/admin/token-usage', icon: CurrencyYenIcon, label: 'トークン使用量' }]
       : []),
     // Attributes page only for super_admin
     ...(role && hasPermission(role, 'canManageAttributes')

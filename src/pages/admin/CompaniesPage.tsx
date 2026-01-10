@@ -13,6 +13,7 @@ import { Button, Input, Card, Table, Badge, Modal, ModalFooter, Alert } from '@/
 import { supabase } from '@/lib/supabase'
 import { CompanyForm, type CompanyFormSubmitData } from '@/components/admin/CompanyForm'
 import { useAuth } from '@/hooks/useAuth'
+import { Breadcrumb } from '@/components/common/Breadcrumb'
 import { hasPermission } from '@/types/database'
 import type { Company } from '@/types/database'
 
@@ -298,6 +299,9 @@ export function CompaniesPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <Breadcrumb />
+
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

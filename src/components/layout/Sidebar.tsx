@@ -6,6 +6,7 @@ import {
   BuildingOffice2Icon,
   BuildingOfficeIcon,
   RectangleStackIcon,
+  Squares2X2Icon,
   BookOpenIcon,
   QueueListIcon,
   DocumentDuplicateIcon,
@@ -17,6 +18,7 @@ import {
   Bars3BottomLeftIcon,
   BellAlertIcon,
   CurrencyYenIcon,
+  LightBulbIcon,
 } from '@heroicons/react/24/outline'
 import { useAuth } from '@/hooks/useAuth'
 import { hasPermission } from '@/types/database'
@@ -34,6 +36,10 @@ export function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }: Side
   // Build menu items based on role permissions
   const menuItems = [
     { path: '/admin', icon: HomeIcon, label: 'ダッシュボード', end: true },
+    // Organization tree view only for super_admin
+    ...(role && hasPermission(role, 'canManageCompanies')
+      ? [{ path: '/admin/organization', icon: Squares2X2Icon, label: '組織管理' }]
+      : []),
     { path: '/admin/users', icon: UsersIcon, label: 'ユーザー管理' },
     // Companies page only for super_admin
     ...(role && hasPermission(role, 'canManageCompanies')
@@ -74,6 +80,10 @@ export function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }: Side
     // Token usage page only for super_admin
     ...(role && hasPermission(role, 'canManageCompanies')
       ? [{ path: '/admin/token-usage', icon: CurrencyYenIcon, label: 'トークン使用量' }]
+      : []),
+    // Knowledge base page only for super_admin
+    ...(role && hasPermission(role, 'canManageCompanies')
+      ? [{ path: '/admin/knowledge-base', icon: LightBulbIcon, label: 'ナレッジベース' }]
       : []),
     // Attributes page only for super_admin
     ...(role && hasPermission(role, 'canManageAttributes')

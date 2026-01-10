@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   PlusIcon,
@@ -9,14 +9,18 @@ import {
   UsersIcon,
   CalendarDaysIcon,
   ArrowUpTrayIcon,
+  UserPlusIcon,
 } from '@heroicons/react/24/outline'
 import { Button, Input, Card, Table, Badge, Modal, ModalFooter, Alert } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { GroupForm, type GroupFormSubmitData } from '@/components/admin/GroupForm'
 import { GroupCsvUpload, type CsvGroupRow } from '@/components/admin/GroupCsvUpload'
 import { TrainingDatesManager } from '@/components/admin/TrainingDatesManager'
+import { UserForm, type UserFormSubmitData } from '@/components/admin/UserForm'
 import { useAuth } from '@/hooks/useAuth'
 import { hasPermission } from '@/types/database'
+import { Breadcrumb } from '@/components/common/Breadcrumb'
+import { generatePassword } from '@/utils/password'
 import type { Group, GroupTrainingDate, Company, Department } from '@/types/database'
 
 type SortField = 'name' | 'company' | 'memberCount' | 'startDate'
@@ -30,7 +34,8 @@ interface GroupWithCount extends Group {
 }
 
 export function GroupsPage() {
-  const { role } = useAuth()
+  const navigate = useNavigate()
+  const { role, session } = useAuth()
   const [groups, setGroups] = useState<GroupWithCount[]>([])
   const [companies, setCompanies] = useState<Company[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
@@ -41,7 +46,9 @@ export function GroupsPage() {
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isTrainingDatesModalOpen, setIsTrainingDatesModalOpen] = useState(false)
+  const [isUserAddModalOpen, setIsUserAddModalOpen] = useState(false)
   const [selectedGroup, setSelectedGroup] = useState<GroupWithCount | null>(null)
+  const [selectedGroupForUserAdd, setSelectedGroupForUserAdd] = useState<GroupWithCount | null>(null)
   const [trainingDates, setTrainingDates] = useState<GroupTrainingDate[]>([])
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -384,6 +391,64 @@ export function GroupsPage() {
     }
   }
 
+  // Handle user creation from group
+  const handleCreateUser = async (data: UserFormSubmitData) => {
+    if (!selectedGroupForUserAdd) return
+
+    try {
+      const password = generatePassword()
+      const response = await fetch('/.netlify/functions/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          email: data.email,
+          password,
+          name: data.name,
+          role: data.role,
+          group_id: selectedGroupForUserAdd.id,
+          company_id: selectedGroupForUserAdd.company_id,
+          department_id: selectedGroupForUserAdd.department_id,
+          is_individual: false,
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'ユーザー作成に失敗しました')
+      }
+
+      // 招待メール送信
+      const emailResponse = await fetch('/.netlify/functions/send-invitation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          email: data.email,
+          name: data.name,
+          password,
+        }),
+      })
+
+      if (!emailResponse.ok) {
+        console.error('Failed to send invitation email')
+        setSuccessMessage(`${data.name}さんを${selectedGroupForUserAdd.name}に追加しました（※招待メールの送信に失敗しました）`)
+      } else {
+        setSuccessMessage(`${data.name}さんを${selectedGroupForUserAdd.name}に追加し、招待メールを送信しました`)
+      }
+      setIsUserAddModalOpen(false)
+      setSelectedGroupForUserAdd(null)
+      fetchGroups() // メンバー数を更新
+    } catch (err) {
+      console.error('Error creating user:', err)
+      setError(err instanceof Error ? err.message : 'ユーザーの作成に失敗しました')
+    }
+  }
+
   // Format date for display
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '-'
@@ -449,9 +514,20 @@ export function GroupsPage() {
     {
       key: 'actions',
       header: '',
-      className: 'w-32',
+      className: 'w-40',
       render: (group: GroupWithCount) => (
         <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setSelectedGroupForUserAdd(group)
+              setIsUserAddModalOpen(true)
+            }}
+            className="p-2 rounded-lg hover:bg-green-50 transition-colors"
+            title="ユーザーを追加"
+          >
+            <UserPlusIcon className="w-4 h-4 text-green-600" />
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation()
@@ -493,6 +569,9 @@ export function GroupsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <Breadcrumb />
+
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -583,6 +662,7 @@ export function GroupsPage() {
           sortField={sortField}
           sortDirection={sortDirection}
           onSort={handleSort}
+          onRowClick={(group) => navigate(`/admin/groups/${group.id}`)}
         />
       </motion.div>
 
@@ -691,6 +771,43 @@ export function GroupsPage() {
           onImport={handleCsvImport}
           onCancel={() => setIsCsvModalOpen(false)}
         />
+      </Modal>
+
+      {/* User add modal */}
+      <Modal
+        isOpen={isUserAddModalOpen}
+        onClose={() => {
+          setIsUserAddModalOpen(false)
+          setSelectedGroupForUserAdd(null)
+        }}
+        title={`ユーザー追加 - ${selectedGroupForUserAdd?.name || ''}`}
+      >
+        {selectedGroupForUserAdd && (
+          <div className="space-y-4">
+            <div className="p-3 bg-blue-50 rounded-lg text-sm">
+              <p className="font-medium text-blue-700">追加先グループ</p>
+              <p className="text-blue-600 mt-1">
+                {selectedGroupForUserAdd.companyName && `${selectedGroupForUserAdd.companyName} / `}
+                {selectedGroupForUserAdd.departmentName && `${selectedGroupForUserAdd.departmentName} / `}
+                {selectedGroupForUserAdd.name}
+              </p>
+            </div>
+            <UserForm
+              groups={groups}
+              companies={companies}
+              departments={departments}
+              currentUserRole={role}
+              defaultCompanyId={selectedGroupForUserAdd.company_id}
+              defaultDepartmentId={selectedGroupForUserAdd.department_id}
+              defaultGroupId={selectedGroupForUserAdd.id}
+              onSubmit={handleCreateUser}
+              onCancel={() => {
+                setIsUserAddModalOpen(false)
+                setSelectedGroupForUserAdd(null)
+              }}
+            />
+          </div>
+        )}
       </Modal>
     </div>
   )

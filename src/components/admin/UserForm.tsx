@@ -45,11 +45,27 @@ interface UserFormProps {
   departments?: Department[]
   currentUserRole?: UserRole | null
   defaultRole?: 'trainee' | 'group_admin' | 'super_admin'
+  // デフォルト値（新規作成時にグループ等を事前選択）
+  defaultCompanyId?: string | null
+  defaultDepartmentId?: string | null
+  defaultGroupId?: string | null
   onSubmit: (data: UserFormSubmitData) => Promise<void>
   onCancel: () => void
 }
 
-export function UserForm({ user, groups, companies = [], departments = [], currentUserRole, defaultRole = 'trainee', onSubmit, onCancel }: UserFormProps) {
+export function UserForm({
+  user,
+  groups,
+  companies = [],
+  departments = [],
+  currentUserRole,
+  defaultRole = 'trainee',
+  defaultCompanyId = null,
+  defaultDepartmentId = null,
+  defaultGroupId = null,
+  onSubmit,
+  onCancel
+}: UserFormProps) {
   const isEditing = !!user
 
   // Determine which roles can be assigned based on current user's role
@@ -75,9 +91,9 @@ export function UserForm({ user, groups, companies = [], departments = [], curre
     defaultValues: {
       name: user?.name || '',
       role: getDefaultRole(),
-      companyId: user?.company_id || null,
-      departmentId: user?.department_id || null,
-      groupId: user?.group_id || null,
+      companyId: user?.company_id || defaultCompanyId || null,
+      departmentId: user?.department_id || defaultDepartmentId || null,
+      groupId: user?.group_id || defaultGroupId || null,
       isIndividual: user?.is_individual ?? false,
       startDate: user?.start_date || '',
       endDate: user?.end_date || '',

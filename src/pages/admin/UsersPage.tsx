@@ -13,8 +13,10 @@ import {
 import { Button, Input, Card, Table, Badge, Modal, ModalFooter, Alert } from '@/components/ui'
 import { supabase, generateRandomPassword } from '@/lib/supabase'
 import { UserForm } from '@/components/admin/UserForm'
+import { UserWizard, type UserWizardSubmitData } from '@/components/admin/UserWizard'
 import { CsvUpload } from '@/components/admin/CsvUpload'
 import { useAuth } from '@/hooks/useAuth'
+import { Breadcrumb } from '@/components/common/Breadcrumb'
 import type { ProfileWithRelations, Group, Company, Department, UserRole } from '@/types/database'
 import { hasPermission } from '@/types/database'
 import type { UserFormSubmitData } from '@/components/admin/UserForm'
@@ -37,6 +39,7 @@ export function UsersPage() {
   const [filterCompanyId, setFilterCompanyId] = useState<string>('')
   const [filterGroupId, setFilterGroupId] = useState<string>('')
   const [isUserModalOpen, setIsUserModalOpen] = useState(false)
+  const [isWizardModalOpen, setIsWizardModalOpen] = useState(false)
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false)
@@ -44,7 +47,6 @@ export function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<ProfileWithRelations | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
-  const [addingUserRole, setAddingUserRole] = useState<'trainee' | 'admin' | 'super_admin'>('trainee')
 
   // Check if current user can manage all users
   const canManageAllUsers = currentUserRole ? hasPermission(currentUserRole, 'canManageAllUsers') : false
@@ -233,9 +235,12 @@ export function UsersPage() {
       if (!response.ok) throw new Error(result.error || 'Failed to create user')
 
       // Send invitation email
-      await fetch('/.netlify/functions/send-invitation', {
+      const emailResponse = await fetch('/.netlify/functions/send-invitation', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           email: data.email,
           name: data.name,
@@ -244,8 +249,77 @@ export function UsersPage() {
         }),
       })
 
-      setSuccessMessage('ユーザーを作成し、招待メールを送信しました')
+      if (!emailResponse.ok) {
+        console.error('Failed to send invitation email')
+        setSuccessMessage('ユーザーを作成しました（※招待メールの送信に失敗しました）')
+      } else {
+        setSuccessMessage('ユーザーを作成し、招待メールを送信しました')
+      }
       setIsUserModalOpen(false)
+      fetchUsers()
+    } catch (err) {
+      console.error('Error creating user:', err)
+      setError(err instanceof Error ? err.message : 'ユーザーの作成に失敗しました')
+    }
+  }
+
+  // Handle user creation from wizard
+  const handleWizardSubmit = async (data: UserWizardSubmitData) => {
+    try {
+      const password = generateRandomPassword()
+      const appUrl = import.meta.env.VITE_APP_URL || window.location.origin
+
+      // Get current session for authorization
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
+
+      // Create user via Netlify Function (server-side)
+      const response = await fetch('/.netlify/functions/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          email: data.email,
+          password,
+          name: data.name,
+          role: data.role,
+          group_id: data.groupId,
+          company_id: data.companyId,
+          department_id: data.departmentId,
+          is_individual: data.isIndividual,
+          start_date: data.startDate,
+          end_date: data.endDate,
+          review_period_days: data.reviewPeriodDays,
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Failed to create user')
+
+      // Send invitation email
+      const emailResponse = await fetch('/.netlify/functions/send-invitation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          email: data.email,
+          name: data.name,
+          password,
+          loginUrl: `${appUrl}/login`,
+        }),
+      })
+
+      if (!emailResponse.ok) {
+        console.error('Failed to send invitation email')
+        setSuccessMessage('ユーザーを作成しました（※招待メールの送信に失敗しました）')
+      } else {
+        setSuccessMessage('ユーザーを作成し、招待メールを送信しました')
+      }
+      setIsWizardModalOpen(false)
       fetchUsers()
     } catch (err) {
       console.error('Error creating user:', err)
@@ -369,10 +443,13 @@ export function UsersPage() {
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Failed to reset password')
 
-      // Send email with new password
-      await fetch('/.netlify/functions/send-invitation', {
+      // Send password reset email
+      const emailResponse = await fetch('/.netlify/functions/send-password-reset', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           email: selectedUser.email,
           name: selectedUser.name,
@@ -380,6 +457,11 @@ export function UsersPage() {
           loginUrl: `${appUrl}/login`,
         }),
       })
+
+      if (!emailResponse.ok) {
+        const emailError = await emailResponse.json()
+        throw new Error(emailError.error || 'メール送信に失敗しました')
+      }
 
       setSuccessMessage(`${selectedUser.name}のパスワードをリセットし、メールを送信しました`)
       setIsResetPasswordModalOpen(false)
@@ -481,9 +563,12 @@ export function UsersPage() {
           }
 
           // Send invitation email
-          await fetch('/.netlify/functions/send-invitation', {
+          const emailResponse = await fetch('/.netlify/functions/send-invitation', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
             body: JSON.stringify({
               email: user.email,
               name: user.userName,
@@ -491,6 +576,10 @@ export function UsersPage() {
               loginUrl: `${appUrl}/login`,
             }),
           })
+
+          if (!emailResponse.ok) {
+            console.error(`Failed to send invitation email to ${user.email}`)
+          }
 
           addedCount++
         } else if (user.action === 'delete') {
@@ -637,6 +726,9 @@ export function UsersPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <Breadcrumb />
+
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -653,17 +745,9 @@ export function UsersPage() {
           </Button>
           <Button
             leftIcon={<PlusIcon className="w-5 h-5" />}
-            onClick={() => {
-              setSelectedUser(null)
-              setAddingUserRole(
-                activeTab === 'super_admins' ? 'super_admin' :
-                activeTab === 'admins' ? 'admin' : 'trainee'
-              )
-              setIsUserModalOpen(true)
-            }}
+            onClick={() => setIsWizardModalOpen(true)}
           >
-            {activeTab === 'super_admins' ? 'マスター管理者追加' :
-             activeTab === 'admins' ? 'グループ管理者追加' : '研修生追加'}
+            ユーザー追加
           </Button>
         </div>
       </div>
@@ -785,16 +869,31 @@ export function UsersPage() {
         />
       </motion.div>
 
-      {/* User form modal */}
+      {/* User wizard modal */}
+      <Modal
+        isOpen={isWizardModalOpen}
+        onClose={() => setIsWizardModalOpen(false)}
+        title="ユーザー追加"
+        size="lg"
+      >
+        <UserWizard
+          companies={companies}
+          departments={departments}
+          groups={groups}
+          currentUserRole={currentUserRole}
+          onSubmit={handleWizardSubmit}
+          onCancel={() => setIsWizardModalOpen(false)}
+        />
+      </Modal>
+
+      {/* User form modal (for editing) */}
       <Modal
         isOpen={isUserModalOpen}
         onClose={() => {
           setIsUserModalOpen(false)
           setSelectedUser(null)
         }}
-        title={selectedUser ? 'ユーザー編集' :
-          addingUserRole === 'super_admin' ? 'マスター管理者追加' :
-          addingUserRole === 'admin' ? 'グループ管理者追加' : '研修生追加'}
+        title={selectedUser ? 'ユーザー編集' : 'ユーザー追加'}
       >
         <UserForm
           user={selectedUser}
@@ -802,10 +901,6 @@ export function UsersPage() {
           companies={companies}
           departments={departments}
           currentUserRole={currentUserRole}
-          defaultRole={
-            addingUserRole === 'super_admin' ? 'super_admin' :
-            addingUserRole === 'admin' ? 'group_admin' : 'trainee'
-          }
           onSubmit={selectedUser ? handleUpdateUser : handleCreateUser}
           onCancel={() => {
             setIsUserModalOpen(false)

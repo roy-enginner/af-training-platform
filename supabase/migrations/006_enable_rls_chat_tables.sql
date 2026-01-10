@@ -22,13 +22,13 @@ ALTER TABLE escalation_logs ENABLE ROW LEVEL SECURITY;
 -- ============================================
 -- ai_models ポリシー
 -- ============================================
--- 認証済みユーザーはアクティブなモデルを参照可能
+DROP POLICY IF EXISTS "Authenticated users can view active ai models" ON ai_models;
 CREATE POLICY "Authenticated users can view active ai models"
   ON ai_models FOR SELECT
   TO authenticated
   USING (is_active = true);
 
--- super_adminは全モデルを管理可能
+DROP POLICY IF EXISTS "Super admin can manage all ai models" ON ai_models;
 CREATE POLICY "Super admin can manage all ai models"
   ON ai_models FOR ALL
   TO authenticated
@@ -42,13 +42,13 @@ CREATE POLICY "Super admin can manage all ai models"
 -- ============================================
 -- chat_sessions ポリシー
 -- ============================================
--- ユーザーは自分のセッションを参照可能
+DROP POLICY IF EXISTS "Users can view own chat sessions" ON chat_sessions;
 CREATE POLICY "Users can view own chat sessions"
   ON chat_sessions FOR SELECT
   TO authenticated
   USING (profile_id = auth.uid());
 
--- super_adminは全セッションを参照可能
+DROP POLICY IF EXISTS "Super admin can view all chat sessions" ON chat_sessions;
 CREATE POLICY "Super admin can view all chat sessions"
   ON chat_sessions FOR SELECT
   TO authenticated
@@ -59,7 +59,7 @@ CREATE POLICY "Super admin can view all chat sessions"
     )
   );
 
--- group_adminは自グループのセッションを参照可能
+DROP POLICY IF EXISTS "Group admin can view group chat sessions" ON chat_sessions;
 CREATE POLICY "Group admin can view group chat sessions"
   ON chat_sessions FOR SELECT
   TO authenticated
@@ -73,20 +73,20 @@ CREATE POLICY "Group admin can view group chat sessions"
     )
   );
 
--- 認証済みユーザーは自分のセッションを作成可能
+DROP POLICY IF EXISTS "Users can create own chat sessions" ON chat_sessions;
 CREATE POLICY "Users can create own chat sessions"
   ON chat_sessions FOR INSERT
   TO authenticated
   WITH CHECK (profile_id = auth.uid());
 
--- ユーザーは自分のセッションを更新可能
+DROP POLICY IF EXISTS "Users can update own chat sessions" ON chat_sessions;
 CREATE POLICY "Users can update own chat sessions"
   ON chat_sessions FOR UPDATE
   TO authenticated
   USING (profile_id = auth.uid())
   WITH CHECK (profile_id = auth.uid());
 
--- super_adminは全セッションを更新可能
+DROP POLICY IF EXISTS "Super admin can update all chat sessions" ON chat_sessions;
 CREATE POLICY "Super admin can update all chat sessions"
   ON chat_sessions FOR UPDATE
   TO authenticated
@@ -97,7 +97,7 @@ CREATE POLICY "Super admin can update all chat sessions"
     )
   );
 
--- super_adminは全セッションを削除可能
+DROP POLICY IF EXISTS "Super admin can delete chat sessions" ON chat_sessions;
 CREATE POLICY "Super admin can delete chat sessions"
   ON chat_sessions FOR DELETE
   TO authenticated
@@ -111,7 +111,7 @@ CREATE POLICY "Super admin can delete chat sessions"
 -- ============================================
 -- chat_messages ポリシー
 -- ============================================
--- ユーザーは自分のセッションのメッセージを参照可能
+DROP POLICY IF EXISTS "Users can view own session messages" ON chat_messages;
 CREATE POLICY "Users can view own session messages"
   ON chat_messages FOR SELECT
   TO authenticated
@@ -123,7 +123,7 @@ CREATE POLICY "Users can view own session messages"
     )
   );
 
--- super_adminは全メッセージを参照可能
+DROP POLICY IF EXISTS "Super admin can view all chat messages" ON chat_messages;
 CREATE POLICY "Super admin can view all chat messages"
   ON chat_messages FOR SELECT
   TO authenticated
@@ -134,7 +134,7 @@ CREATE POLICY "Super admin can view all chat messages"
     )
   );
 
--- group_adminは自グループのメッセージを参照可能
+DROP POLICY IF EXISTS "Group admin can view group chat messages" ON chat_messages;
 CREATE POLICY "Group admin can view group chat messages"
   ON chat_messages FOR SELECT
   TO authenticated
@@ -149,7 +149,7 @@ CREATE POLICY "Group admin can view group chat messages"
     )
   );
 
--- 認証済みユーザーは自分のセッションにメッセージを追加可能
+DROP POLICY IF EXISTS "Users can insert messages to own sessions" ON chat_messages;
 CREATE POLICY "Users can insert messages to own sessions"
   ON chat_messages FOR INSERT
   TO authenticated
@@ -161,7 +161,7 @@ CREATE POLICY "Users can insert messages to own sessions"
     )
   );
 
--- super_adminは全メッセージを削除可能
+DROP POLICY IF EXISTS "Super admin can delete chat messages" ON chat_messages;
 CREATE POLICY "Super admin can delete chat messages"
   ON chat_messages FOR DELETE
   TO authenticated
@@ -175,13 +175,13 @@ CREATE POLICY "Super admin can delete chat messages"
 -- ============================================
 -- token_usage ポリシー
 -- ============================================
--- ユーザーは自分の使用量を参照可能
+DROP POLICY IF EXISTS "Users can view own token usage" ON token_usage;
 CREATE POLICY "Users can view own token usage"
   ON token_usage FOR SELECT
   TO authenticated
   USING (profile_id = auth.uid());
 
--- super_adminは全使用量を参照可能
+DROP POLICY IF EXISTS "Super admin can view all token usage" ON token_usage;
 CREATE POLICY "Super admin can view all token usage"
   ON token_usage FOR SELECT
   TO authenticated
@@ -192,7 +192,7 @@ CREATE POLICY "Super admin can view all token usage"
     )
   );
 
--- group_adminは自グループの使用量を参照可能
+DROP POLICY IF EXISTS "Group admin can view group token usage" ON token_usage;
 CREATE POLICY "Group admin can view group token usage"
   ON token_usage FOR SELECT
   TO authenticated
@@ -205,14 +205,13 @@ CREATE POLICY "Group admin can view group token usage"
     )
   );
 
--- token_usageへの挿入はservice_role経由（Netlify Functions）で行う
--- 認証済みユーザーは自分の使用量レコードのみ挿入可能（バックアップ用）
+DROP POLICY IF EXISTS "Users can insert own token usage" ON token_usage;
 CREATE POLICY "Users can insert own token usage"
   ON token_usage FOR INSERT
   TO authenticated
   WITH CHECK (profile_id = auth.uid());
 
--- super_adminは全使用量を管理可能
+DROP POLICY IF EXISTS "Super admin can manage all token usage" ON token_usage;
 CREATE POLICY "Super admin can manage all token usage"
   ON token_usage FOR ALL
   TO authenticated
@@ -226,7 +225,7 @@ CREATE POLICY "Super admin can manage all token usage"
 -- ============================================
 -- escalation_configs ポリシー
 -- ============================================
--- super_adminは全設定を管理可能
+DROP POLICY IF EXISTS "Super admin can manage escalation configs" ON escalation_configs;
 CREATE POLICY "Super admin can manage escalation configs"
   ON escalation_configs FOR ALL
   TO authenticated
@@ -237,7 +236,7 @@ CREATE POLICY "Super admin can manage escalation configs"
     )
   );
 
--- group_adminは自グループの設定を参照可能
+DROP POLICY IF EXISTS "Group admin can view group escalation configs" ON escalation_configs;
 CREATE POLICY "Group admin can view group escalation configs"
   ON escalation_configs FOR SELECT
   TO authenticated
@@ -256,7 +255,7 @@ CREATE POLICY "Group admin can view group escalation configs"
 -- ============================================
 -- escalation_logs ポリシー
 -- ============================================
--- super_adminは全ログを管理可能
+DROP POLICY IF EXISTS "Super admin can manage escalation logs" ON escalation_logs;
 CREATE POLICY "Super admin can manage escalation logs"
   ON escalation_logs FOR ALL
   TO authenticated
@@ -267,13 +266,13 @@ CREATE POLICY "Super admin can manage escalation logs"
     )
   );
 
--- ユーザーは自分のエスカレーションログを参照可能
+DROP POLICY IF EXISTS "Users can view own escalation logs" ON escalation_logs;
 CREATE POLICY "Users can view own escalation logs"
   ON escalation_logs FOR SELECT
   TO authenticated
   USING (profile_id = auth.uid());
 
--- group_adminは自グループのエスカレーションログを参照可能
+DROP POLICY IF EXISTS "Group admin can view group escalation logs" ON escalation_logs;
 CREATE POLICY "Group admin can view group escalation logs"
   ON escalation_logs FOR SELECT
   TO authenticated
@@ -287,8 +286,7 @@ CREATE POLICY "Group admin can view group escalation logs"
     )
   );
 
--- escalation_logsへの挿入はservice_role経由（Netlify Functions）で行う
--- 認証済みユーザーは自分のログのみ挿入可能（バックアップ用）
+DROP POLICY IF EXISTS "Users can insert own escalation logs" ON escalation_logs;
 CREATE POLICY "Users can insert own escalation logs"
   ON escalation_logs FOR INSERT
   TO authenticated

@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabase'
 import { DepartmentForm, type DepartmentFormSubmitData } from '@/components/admin/DepartmentForm'
 import { DepartmentCsvUpload, type CsvDepartmentRow } from '@/components/admin/DepartmentCsvUpload'
 import { useAuth } from '@/hooks/useAuth'
+import { Breadcrumb } from '@/components/common/Breadcrumb'
 import { hasPermission } from '@/types/database'
 import type { Department, Company } from '@/types/database'
 
@@ -439,6 +440,9 @@ export function DepartmentsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <Breadcrumb />
+
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

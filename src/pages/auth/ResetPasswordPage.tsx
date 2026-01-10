@@ -60,7 +60,7 @@ export function ResetPasswordPage() {
     const { error: updateError } = await updatePassword(data.password)
 
     if (updateError) {
-      setError('パスワードの更新に失敗しました')
+      setError(`[パスワードリセット/更新] パスワードの更新に失敗しました。リセットリンクが期限切れの可能性があります。再度リセットメールを送信してください。詳細: ${updateError}`)
       return
     }
 

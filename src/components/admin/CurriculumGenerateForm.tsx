@@ -11,6 +11,7 @@ import {
   ClockIcon,
   AcademicCapIcon,
   XCircleIcon,
+  StopIcon,
 } from '@heroicons/react/24/outline'
 import { Button, Input, ModalFooter, Alert, Badge } from '@/components/ui'
 import { apiPost, ApiError } from '@/lib/api'
@@ -115,6 +116,7 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
   const [jobProgress, setJobProgress] = useState<number>(0)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
   const [jobStep, setJobStep] = useState<string>('')
+  const [isAborting, setIsAborting] = useState(false)
 
   // 生成結果
   const [generatedStructure, setGeneratedStructure] = useState<GeneratedStructure | null>(null)
@@ -312,7 +314,32 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
     setJobProgress(0)
     setJobStatus(null)
     setJobStep('')
+    setIsAborting(false)
   }
+
+  // ジョブをアボート
+  const handleAbortJob = useCallback(async () => {
+    if (!currentJobId) return
+
+    setIsAborting(true)
+    setError(null)
+
+    try {
+      await apiPost('abort-curriculum-job', { jobId: currentJobId })
+
+      // アボート成功 - Realtime でステータス更新が来るが、念のため状態をリセット
+      setJobStep('ジョブを中断しました')
+    } catch (err) {
+      console.error('Error aborting job:', err)
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError('ジョブのアボートに失敗しました')
+      }
+    } finally {
+      setIsAborting(false)
+    }
+  }, [currentJobId])
 
   // ステップインジケーター
   const StepIndicator = () => {
@@ -400,6 +427,26 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
           {jobStatus ? STATUS_LABELS[jobStatus] : '準備中...'}
         </span>
       </div>
+
+      {/* アボートボタン */}
+      {currentJobId && jobStatus && !['completed', 'failed'].includes(jobStatus) && (
+        <div className="flex justify-center pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleAbortJob}
+            disabled={isAborting}
+            className="text-error border-error hover:bg-red-50"
+            leftIcon={isAborting ? (
+              <div className="w-4 h-4 border-2 border-error border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <StopIcon className="w-4 h-4" />
+            )}
+          >
+            {isAborting ? '中断中...' : '処理を中断'}
+          </Button>
+        </div>
+      )}
     </div>
   )
 

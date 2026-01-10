@@ -78,7 +78,8 @@ export function ChangePasswordPage() {
       }, 1500)
     } catch (err) {
       console.error('Password update error:', err)
-      setError('パスワードの変更に失敗しました')
+      const detail = err instanceof Error ? err.message : '不明なエラー'
+      setError(`[パスワード変更] パスワードの変更に失敗しました: ${detail}`)
     }
   }
 

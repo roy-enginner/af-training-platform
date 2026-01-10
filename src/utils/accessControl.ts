@@ -19,7 +19,7 @@ export function checkTraineeAccess(
     return {
       allowed: false,
       reason: 'no_group',
-      message: 'グループに所属していないため、アクセスできません。管理者にお問い合わせください。',
+      message: '[アクセス制御] グループに所属していないため、アクセスできません。ユーザー管理画面でグループの割り当てを確認してください。',
     }
   }
 
@@ -28,7 +28,7 @@ export function checkTraineeAccess(
     return {
       allowed: false,
       reason: 'group_inactive',
-      message: 'グループが無効になっています。管理者にお問い合わせください。',
+      message: `[アクセス制御] グループ「${group.name}」が無効化されています。グループ管理画面で有効化してください。`,
     }
   }
 
@@ -85,7 +85,7 @@ export function checkTraineeAccess(
   return {
     allowed: false,
     reason: 'expired',
-    message: 'アクセス期間が終了しています。継続利用をご希望の場合は管理者にお問い合わせください。',
+    message: '[アクセス制御] グループのアクセス期間が終了しています。グループ管理画面で契約期間または研修日を確認してください。',
   }
 }
 
@@ -107,7 +107,7 @@ export function checkIndividualAccess(
       return {
         allowed: false,
         reason: 'access_expired',
-        message: 'アクセス権限の有効期限が切れています。管理者にお問い合わせください。',
+        message: `[アクセス制御] アクセス権限の有効期限（${expiresAt.toLocaleDateString('ja-JP')}）が切れています。ユーザー管理画面でaccess_expires_atを更新してください。`,
       }
     }
   }
@@ -128,7 +128,7 @@ export function checkIndividualAccess(
     return {
       allowed: false,
       reason: 'individual_no_period',
-      message: '利用期間が設定されていません。管理者にお問い合わせください。',
+      message: '[アクセス制御] 利用期間が設定されていません。ユーザー管理画面で契約期間または研修日を設定してください。',
     }
   }
 
@@ -171,6 +171,6 @@ export function checkIndividualAccess(
   return {
     allowed: false,
     reason: 'expired',
-    message: 'アクセス期間が終了しています。継続利用をご希望の場合は管理者にお問い合わせください。',
+    message: '[アクセス制御] 個人ユーザーのアクセス期間が終了しています。ユーザー管理画面で契約期間または研修日を確認してください。',
   }
 }

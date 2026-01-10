@@ -2,6 +2,9 @@ import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { getCorsHeaders, createPreflightResponse } from './shared/cors'
+import { ErrorResponses } from './shared/errors'
+
+const FUNCTION_NAME = 'send-invitation'
 
 interface InvitationRequest {
   email: string
@@ -21,21 +24,13 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
 
   // Only allow POST requests
   if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    }
+    return ErrorResponses.badRequest(headers, FUNCTION_NAME, `HTTPメソッド ${event.httpMethod} は許可されていません。POSTを使用してください。`)
   }
 
   // Verify authorization
   const authHeader = event.headers.authorization
   if (!authHeader?.startsWith('Bearer ')) {
-    return {
-      statusCode: 401,
-      headers,
-      body: JSON.stringify({ error: 'Unauthorized' }),
-    }
+    return ErrorResponses.unauthorized(headers, FUNCTION_NAME, 'Authorizationヘッダーが必要です。')
   }
 
   // Validate caller is admin
@@ -43,11 +38,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!supabaseUrl || !supabaseServiceKey) {
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'Server configuration error' }),
-    }
+    return ErrorResponses.configError(headers, FUNCTION_NAME, 'VITE_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY')
   }
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
@@ -61,11 +52,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   const { data: { user: caller }, error: authError } = await supabaseAdmin.auth.getUser(token)
 
   if (authError || !caller) {
-    return {
-      statusCode: 401,
-      headers,
-      body: JSON.stringify({ error: 'Invalid token' }),
-    }
+    return ErrorResponses.invalidToken(headers, FUNCTION_NAME)
   }
 
   // Verify caller is admin
@@ -76,22 +63,14 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     .single()
 
   if (callerProfile?.role !== 'super_admin' && callerProfile?.role !== 'group_admin') {
-    return {
-      statusCode: 403,
-      headers,
-      body: JSON.stringify({ error: 'Admin access required' }),
-    }
+    return ErrorResponses.groupAdminRequired(headers, FUNCTION_NAME)
   }
 
   // Check Resend API key
   const resendApiKey = process.env.RESEND_API_KEY
   if (!resendApiKey) {
     console.error('RESEND_API_KEY is not set')
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'Email service not configured' }),
-    }
+    return ErrorResponses.configError(headers, FUNCTION_NAME, 'RESEND_API_KEY')
   }
 
   const resend = new Resend(resendApiKey)
@@ -99,12 +78,20 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   try {
     const { email, name, password, loginUrl } = JSON.parse(event.body || '{}') as InvitationRequest
 
-    if (!email || !name || !password || !loginUrl) {
-      return {
-        statusCode: 400,
+    // 必須フィールドの検証
+    const missingFields: string[] = []
+    if (!email) missingFields.push('email')
+    if (!name) missingFields.push('name')
+    if (!password) missingFields.push('password')
+    if (!loginUrl) missingFields.push('loginUrl')
+
+    if (missingFields.length > 0) {
+      return ErrorResponses.validationError(
         headers,
-        body: JSON.stringify({ error: 'Missing required fields' }),
-      }
+        FUNCTION_NAME,
+        `必須フィールドが不足しています: ${missingFields.join(', ')}`,
+        { missingFields }
+      )
     }
 
     const { data, error } = await resend.emails.send({
@@ -178,11 +165,11 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
 
     if (error) {
       console.error('Resend error:', error)
-      return {
-        statusCode: 500,
+      return ErrorResponses.emailError(
         headers,
-        body: JSON.stringify({ error: 'Failed to send email' }),
-      }
+        FUNCTION_NAME,
+        `招待メールの送信に失敗しました: ${error.message || '不明なエラー'}`
+      )
     }
 
     return {
@@ -191,12 +178,13 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       body: JSON.stringify({ success: true, messageId: data?.id }),
     }
   } catch (error) {
-    console.error('Error:', error)
-    return {
-      statusCode: 500,
+    console.error('Error in send-invitation:', error)
+    return ErrorResponses.serverError(
       headers,
-      body: JSON.stringify({ error: 'Internal server error' }),
-    }
+      FUNCTION_NAME,
+      'リクエスト処理',
+      `予期しないエラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`
+    )
   }
 }
 

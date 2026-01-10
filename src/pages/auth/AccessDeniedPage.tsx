@@ -46,7 +46,7 @@ export function AccessDeniedPage({ message }: AccessDeniedPageProps) {
         </Card>
 
         <p className="text-center text-sm text-text-light mt-6">
-          ご不明な点がございましたら、管理者にお問い合わせください。
+          ※ 上記メッセージで解決しない場合は、ブラウザの開発者ツール（Console）でエラー詳細を確認してください。
         </p>
       </motion.div>
     </div>

@@ -86,6 +86,16 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     return { statusCode: 200, body: 'Job already processed' }
   }
 
+  // ジョブがアボートされていないか定期的にチェックするヘルパー
+  const checkIfAborted = async (): Promise<boolean> => {
+    const { data: currentJob } = await supabaseAdmin
+      .from('curriculum_generation_jobs')
+      .select('status')
+      .eq('id', jobId)
+      .single()
+    return currentJob?.status === 'failed'
+  }
+
   try {
     // 処理開始
     await updateJobProgress(supabaseAdmin, jobId, {
@@ -127,6 +137,12 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     for (let i = 0; i < chapters.length; i++) {
       const chapter = chapters[i]
 
+      // チャプター生成前にアボートチェック
+      if (await checkIfAborted()) {
+        console.log(`Job was aborted before chapter ${i + 1}:`, jobId)
+        return { statusCode: 200, body: 'Job was aborted' }
+      }
+
       // 進捗を更新（チャプターごと）
       const progressPercent = Math.round(10 + (80 * i) / chapters.length)
       await updateJobProgress(supabaseAdmin, jobId, {
@@ -134,6 +150,8 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
         progress: progressPercent,
         current_step: `チャプター ${i + 1}/${chapters.length} を生成中: ${chapter.title}`,
       })
+
+      console.log(`Generating chapter ${i + 1}/${chapters.length} for job: ${jobId}`)
 
       const systemPrompt = `あなたは企業研修のコンテンツ作成の専門家です。
 与えられたチャプター構成に基づいて、詳細な学習コンテンツを作成してください。
@@ -241,16 +259,36 @@ ${chapterContext}
     return { statusCode: 200, body: 'Job completed' }
 
   } catch (error) {
-    console.error('Error processing content job:', error)
+    console.error('Error processing content job:', jobId, error)
+
+    // ジョブが既にアボートされている場合はエラー記録をスキップ
+    if (await checkIfAborted()) {
+      console.log('Job was already aborted:', jobId)
+      return { statusCode: 200, body: 'Job was aborted' }
+    }
 
     // エラーメッセージを取得
     let errorMessage = 'コンテンツ生成中にエラーが発生しました'
     if (error instanceof Anthropic.APIError) {
+      console.error('Anthropic API Error:', {
+        status: error.status,
+        message: error.message,
+        headers: error.headers,
+      })
+
       if (error.status === 429) {
         errorMessage = 'APIレート制限に達しました。しばらく待ってから再試行してください。'
+      } else if (error.status === 401) {
+        errorMessage = 'API認証エラー: APIキーを確認してください。'
+      } else if (error.status === 500 || error.status === 503) {
+        errorMessage = 'AI APIが一時的に利用できません。しばらく待ってから再試行してください。'
+      } else if (error.status === 408 || error.message.includes('timeout')) {
+        errorMessage = 'AI APIがタイムアウトしました。再試行してください。'
       } else {
-        errorMessage = `AI API エラー: ${error.message}`
+        errorMessage = `AI API エラー (${error.status}): ${error.message}`
       }
+    } else if (error instanceof SyntaxError) {
+      errorMessage = 'AIの応答をJSON形式に解析できませんでした。再試行してください。'
     } else if (error instanceof Error) {
       errorMessage = error.message
     }

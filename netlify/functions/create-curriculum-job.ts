@@ -168,8 +168,9 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       }
     }
 
-    // Background Functionを呼び出し（非同期）
+    // Background Functionを呼び出し
     // Netlify Background Functionは `-background` サフィックスで自動的に非同期実行される
+    // 呼び出し元には即座に202が返り、実際の処理はバックグラウンドで継続される
     const backgroundFunctionUrl = body.jobType === 'structure'
       ? `${process.env.URL || 'http://localhost:4444'}/.netlify/functions/process-curriculum-structure-background`
       : `${process.env.URL || 'http://localhost:4444'}/.netlify/functions/process-curriculum-content-background`
@@ -177,41 +178,46 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     // 内部通信用シークレット
     const internalSecret = process.env.INTERNAL_FUNCTION_SECRET
 
-    // Background Functionを非同期で呼び出し（レスポンスを待たない）
-    fetch(backgroundFunctionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(internalSecret && { 'x-internal-secret': internalSecret }),
-      },
-      body: JSON.stringify({ jobId: job.id }),
-    })
-      .then(async (response) => {
-        // Background Functionが即座にエラーを返した場合
-        if (!response.ok && response.status !== 202) {
-          console.error('Background function returned error:', response.status)
-          await supabaseAdmin
-            .from('curriculum_generation_jobs')
-            .update({
-              status: 'failed',
-              error_message: 'Background functionの起動に失敗しました',
-              completed_at: new Date().toISOString(),
-            })
-            .eq('id', job.id)
-        }
+    console.log(`Triggering background function: ${backgroundFunctionUrl}`)
+
+    // Background Functionを呼び出し（awaitして確実にリクエストを送信）
+    // Background Functionは即座に202を返すので、ここでブロックされることはない
+    try {
+      const triggerResponse = await fetch(backgroundFunctionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(internalSecret && { 'x-internal-secret': internalSecret }),
+        },
+        body: JSON.stringify({ jobId: job.id }),
       })
-      .catch(async (err) => {
-        console.error('Failed to trigger background function:', err)
-        // トリガー失敗時はジョブを失敗状態に更新
+
+      console.log(`Background function trigger response: ${triggerResponse.status}`)
+
+      // Background Functionが即座にエラーを返した場合（202以外のエラー）
+      if (!triggerResponse.ok && triggerResponse.status !== 202) {
+        console.error('Background function returned error:', triggerResponse.status)
         await supabaseAdmin
           .from('curriculum_generation_jobs')
           .update({
             status: 'failed',
-            error_message: 'Background functionの起動に失敗しました',
+            error_message: `Background functionの起動に失敗しました (status: ${triggerResponse.status})`,
             completed_at: new Date().toISOString(),
           })
           .eq('id', job.id)
-      })
+      }
+    } catch (err) {
+      console.error('Failed to trigger background function:', err)
+      // トリガー失敗時はジョブを失敗状態に更新
+      await supabaseAdmin
+        .from('curriculum_generation_jobs')
+        .update({
+          status: 'failed',
+          error_message: 'Background functionの起動に失敗しました',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', job.id)
+    }
 
     return {
       statusCode: 200,

@@ -9,13 +9,21 @@
   # Note: 26秒はNetlify無料プランの最大値
   external_node_modules = ["@anthropic-ai/sdk"]
 
-# AI構成生成（長時間処理）
-[functions."generate-curriculum-structure"]
-  timeout = 60
+# ジョブ作成（短時間処理）
+[functions."create-curriculum-job"]
+  timeout = 30
 
-# AIコンテンツ生成（長時間処理）
+# Background Functions（非同期処理、最大15分）
+# ファイル名に -background サフィックスがあれば自動的にBackground Functionとして認識される
+# process-curriculum-structure-background.ts → 構成生成（Opus 4.5使用）
+# process-curriculum-content-background.ts → コンテンツ生成（Sonnet 4.5使用）
+
+# 旧API（後方互換性のため残置、将来削除予定）
+[functions."generate-curriculum-structure"]
+  timeout = 30
+
 [functions."generate-curriculum-content"]
-  timeout = 60
+  timeout = 30
 
 # 素材からのカリキュラム生成
 [functions."generate-curriculum-from-material"]

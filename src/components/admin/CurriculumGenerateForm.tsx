@@ -127,6 +127,16 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
         }),
       })
 
+      // レスポンスがJSONかどうか確認
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        console.error('Unexpected response type:', contentType, 'Status:', response.status)
+        if (response.status === 404) {
+          throw new Error('APIエンドポイントが見つかりません。デプロイを確認してください。')
+        }
+        throw new Error(`サーバーエラーが発生しました (${response.status})。管理者に連絡してください。`)
+      }
+
       const result = await response.json()
 
       if (!response.ok) {
@@ -181,6 +191,16 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
           tags: generatedStructure.tags,
         }),
       })
+
+      // レスポンスがJSONかどうか確認
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        console.error('Unexpected response type:', contentType, 'Status:', response.status)
+        if (response.status === 404) {
+          throw new Error('APIエンドポイントが見つかりません。デプロイを確認してください。')
+        }
+        throw new Error(`サーバーエラーが発生しました (${response.status})。管理者に連絡してください。`)
+      }
 
       const result = await response.json()
 

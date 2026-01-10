@@ -178,9 +178,10 @@ ${difficultyLabel}
 詳細なコンテンツは後のステップで作成するため、この段階では構成のみを出力してください。`
 
     // Call Claude Opus 4.5 API for structure generation
+    // Note: max_tokensが大きすぎるとストリーミングが必要になるため8192に制限
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
-      max_tokens: 32864,
+      max_tokens: 8192,
       messages: [
         {
           role: 'user',

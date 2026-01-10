@@ -484,16 +484,16 @@ export function formatSSEError(message: string): string {
 // モデル情報
 // ============================================
 export const DEFAULT_MODELS: Record<AIProvider, string> = {
-  anthropic: 'claude-sonnet-4-20250514',
+  anthropic: 'claude-sonnet-4-5-20250929',
   openai: 'gpt-4o',
   google: 'gemini-2.0-flash',
 }
 
 export const MODEL_MAX_TOKENS: Record<string, number> = {
   // Anthropic
-  'claude-opus-4-20250514': 32768,
-  'claude-sonnet-4-20250514': 64000,
-  'claude-3-5-haiku-20241022': 8192,
+  'claude-opus-4-5-20251101': 32768,
+  'claude-sonnet-4-5-20250929': 64000,
+  'claude-haiku-4-5-20251001': 8192,
   // OpenAI
   'gpt-4o': 16384,
   'gpt-4o-mini': 16384,

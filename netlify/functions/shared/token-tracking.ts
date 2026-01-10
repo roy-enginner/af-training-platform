@@ -247,9 +247,9 @@ export interface TokenCostInfo {
 // モデルごとのコスト（1Mトークンあたりのドル）
 export const MODEL_COSTS: Record<string, TokenCostInfo> = {
   // Anthropic
-  'claude-opus-4-20250514': { inputTokenCost: 15, outputTokenCost: 75 },
-  'claude-sonnet-4-20250514': { inputTokenCost: 3, outputTokenCost: 15 },
-  'claude-3-5-haiku-20241022': { inputTokenCost: 1, outputTokenCost: 5 },
+  'claude-opus-4-5-20251101': { inputTokenCost: 15, outputTokenCost: 75 },
+  'claude-sonnet-4-5-20250929': { inputTokenCost: 3, outputTokenCost: 15 },
+  'claude-haiku-4-5-20251001': { inputTokenCost: 1, outputTokenCost: 5 },
   // OpenAI
   'gpt-4o': { inputTokenCost: 2.5, outputTokenCost: 10 },
   'gpt-4o-mini': { inputTokenCost: 0.15, outputTokenCost: 0.6 },

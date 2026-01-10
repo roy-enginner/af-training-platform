@@ -180,7 +180,7 @@ ${difficultyLabel}
     // Call Claude Sonnet 4.5 API for structure generation
     // Note: Opus 4.5は処理時間が長くNetlifyのタイムアウト(26秒)を超えるためSonnet 4.5を使用
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 8192,
       messages: [
         {
@@ -255,7 +255,7 @@ ${difficultyLabel}
         usage: {
           inputTokens: message.usage.input_tokens,
           outputTokens: message.usage.output_tokens,
-          model: 'claude-sonnet-4-5-20250514',
+          model: 'claude-sonnet-4-5-20250929',
         },
       }),
     }

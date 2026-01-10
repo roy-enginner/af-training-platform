@@ -168,7 +168,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
       const result = await createCompletion({
         provider: 'anthropic',
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-5-20250929',
         messages: [
           {
             role: 'user',

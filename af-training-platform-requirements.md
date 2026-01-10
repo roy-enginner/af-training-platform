@@ -396,7 +396,25 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - 日付別グラフ（入力/出力トークン内訳）
 - テーブル形式の詳細表示
 
-### 4.14 ユーザー属性管理（実装済みDB構造）
+### 4.14 RAG・ナレッジベース（実装済み）
+
+#### 概要
+- QAチャットにナレッジベース検索を統合
+- pgvectorによるベクトル類似検索
+- OpenAI Embeddings API（text-embedding-3-small）を使用
+
+#### 機能
+- **ナレッジベース管理**: カテゴリ別のFAQ・ヘルプコンテンツ管理
+- **埋め込み生成**: 管理者による一括生成
+- **RAG検索**: QA質問時に類似コンテンツを自動検索
+- **コンテキスト統合**: ナレッジ + 学習中カリキュラムを組み合わせた回答生成
+
+#### データベース
+- `knowledge_base` テーブル: カテゴリ、タイトル、コンテンツ管理
+- `content_embeddings` テーブル: ベクトル埋め込み格納（1536次元）
+- `search_similar_content` 関数: コサイン類似度検索
+
+### 4.15 ユーザー属性管理（実装済み）
 
 #### 柔軟な属性システム
 - **属性定義マスタ**: `attribute_definitions` テーブル
@@ -410,7 +428,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 | skill_level | AIスキルレベル | select | 初級, 中級, 上級 |
 | tags | タグ | text | - |
 
-### 4.15 進捗管理・分析ダッシュボード
+### 4.16 進捗管理・分析ダッシュボード
 
 #### 研修生向け
 - 自分の進捗状況表示
@@ -424,7 +442,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - チャット利用統計（質問傾向等）
 - 研修完了率・離脱率分析
 
-### 4.16 通知機能
+### 4.17 通知機能
 
 #### リマインド通知（メール）
 - 日次で未完了チャプターをリマインド
@@ -435,7 +453,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - メール
 - Microsoft Teams
 
-### 4.17 PDF出力
+### 4.18 PDF出力
 
 #### 出力対象
 - カリキュラム内容（テキスト部分のみ）
@@ -444,7 +462,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 #### 用途
 - 集合研修での印刷配布用
 
-### 4.18 決済連携（Square）
+### 4.19 決済連携（Square）
 
 #### 実装範囲（半自動連携）
 - 管理画面からSquare請求書を発行
@@ -847,6 +865,43 @@ source-materials/
 - created_at: timestamptz
 ```
 
+### 5.9 RAG・ナレッジベーステーブル（実装済み）
+
+#### knowledge_base（ナレッジベース）
+```sql
+- id: uuid (PK)
+- category: text -- 'general', 'faq', 'platform_usage', 'ai_basics', 'troubleshooting'
+- title: text
+- content: text
+- company_id: uuid (FK -> companies.id, nullable)
+- is_active: boolean (default: true)
+- created_at: timestamptz
+- updated_at: timestamptz
+```
+
+#### content_embeddings（埋め込みベクトル）
+```sql
+- id: uuid (PK)
+- source_type: text -- 'knowledge_base', 'curriculum', 'chapter'
+- source_id: uuid
+- content_chunk: text -- 分割されたテキストチャンク
+- chunk_index: integer
+- embedding: vector(1536) -- OpenAI text-embedding-3-small
+- metadata: jsonb (nullable)
+- created_at: timestamptz
+- INDEX: ivfflat (embedding vector_cosine_ops) WITH (lists = 100)
+```
+
+#### search_similar_content（類似検索関数）
+```sql
+-- コサイン類似度による検索関数
+CREATE FUNCTION search_similar_content(
+  query_embedding vector(1536),
+  match_threshold float DEFAULT 0.7,
+  match_count int DEFAULT 5
+) RETURNS TABLE (...)
+```
+
 ---
 
 ## 6. Netlify Functions（実装済み）
@@ -919,6 +974,19 @@ source-materials/
 | `admin-token-usage` | GET | トークン使用量統計取得 - super_admin |
 | `admin-feedback-stats` | GET | フィードバック統計取得 - super_admin |
 | `admin-feedback-suggest` | POST | AI改善サジェスト生成 - super_admin |
+
+### 6.9 RAG・埋め込みFunctions（実装済み）
+
+| Function | メソッド | 用途 |
+|----------|----------|------|
+| `admin-generate-embeddings` | POST | ナレッジベース埋め込み生成 - super_admin |
+| `send-password-reset` | POST | パスワードリセットメール送信 - admin |
+
+### 6.10 共通モジュール（追加）
+
+| モジュール | 役割 |
+|-----------|------|
+| `shared/embeddings.ts` | OpenAI Embeddings API連携、RAG検索 |
 
 ---
 
@@ -1035,6 +1103,21 @@ source-materials/
 - [x] 日次/週次/月次集計
 - [x] モデル別・ユーザー別・企業別統計
 - [x] 推定コスト表示
+
+#### 4.8 RAG・ナレッジベース機能 ✅ 完了
+- [x] pgvectorによるベクトル類似検索
+- [x] ナレッジベース管理ページ（KnowledgeBasePage.tsx）
+- [x] 埋め込み生成API（admin-generate-embeddings.ts）
+- [x] RAG検索モジュール（shared/embeddings.ts）
+- [x] QAチャットへのRAG統合（qa-ask.ts）
+- [x] knowledge_base / content_embeddings テーブル
+- [x] search_similar_content 関数
+
+#### 4.9 パスワードリセット機能改善 ✅ 完了
+- [x] Supabase PASSWORD_RECOVERYイベント対応
+- [x] isRecoveryModeハンドリング（useAuth.tsx）
+- [x] パスワードリセットメール送信API（send-password-reset.ts）
+- [x] group_admin権限範囲制限（自グループ内のみ）
 
 ### Phase 5: レポート・分析機能
 - [ ] 管理者ダッシュボード強化
@@ -1191,3 +1274,8 @@ source-materials/
 | 2026/01/10 | Netlify Functions追加（chat-send, chat-sessions, qa-ask, escalation-notify, admin-escalation, admin-token-usage, admin-feedback-stats） |
 | 2026/01/10 | 共通モジュール追加（ai-providers.ts, token-tracking.ts, teams-webhook.ts） |
 | 2026/01/10 | Supabase新規テーブル追加（ai_models, chat_sessions, chat_messages, token_usage, escalation_configs, escalation_logs） |
+| 2026/01/10 | RAG機能実装: pgvectorベクトル類似検索、ナレッジベース管理ページ |
+| 2026/01/10 | 埋め込み生成API追加（admin-generate-embeddings.ts, shared/embeddings.ts） |
+| 2026/01/10 | QAチャットへのRAG統合（カリキュラム+ナレッジベースコンテキスト活用） |
+| 2026/01/10 | パスワードリセット機能改善（PASSWORD_RECOVERYイベント対応、group_admin権限制限） |
+| 2026/01/10 | Supabase新規テーブル追加（knowledge_base, content_embeddings）、pgvector拡張有効化 |

@@ -254,7 +254,7 @@ ${materialText ? `【参照資料】\n${materialText}\n\n` : ''}【追加要件�
 
     // Claude Opus 4.5で構成生成
     const message = await anthropic.messages.create({
-      model: 'claude-opus-4-5-20250929',
+      model: 'claude-opus-4-5-20251101',
       max_tokens: 8192,
       messages: [
         {
@@ -375,7 +375,7 @@ ${materialText ? `【参照資料】\n${materialText}\n\n` : ''}【追加要件�
         usage: {
           inputTokens: message.usage.input_tokens,
           outputTokens: message.usage.output_tokens,
-          model: 'claude-opus-4-5-20250929',
+          model: 'claude-opus-4-5-20251101',
         },
       }),
     }

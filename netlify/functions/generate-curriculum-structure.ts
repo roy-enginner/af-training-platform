@@ -177,10 +177,10 @@ ${difficultyLabel}
 各チャプターには、タイトル、概要、学習目標、所要時間を含めてください。
 詳細なコンテンツは後のステップで作成するため、この段階では構成のみを出力してください。`
 
-    // Call Claude Sonnet 4 API for structure generation
-    // Note: Opus 4.5は処理時間が長くNetlifyのタイムアウト(26秒)を超えるためSonnet 4を使用
+    // Call Claude Sonnet 4.5 API for structure generation
+    // Note: Opus 4.5は処理時間が長くNetlifyのタイムアウト(26秒)を超えるためSonnet 4.5を使用
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5-20250514',
       max_tokens: 8192,
       messages: [
         {
@@ -255,7 +255,7 @@ ${difficultyLabel}
         usage: {
           inputTokens: message.usage.input_tokens,
           outputTokens: message.usage.output_tokens,
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-5-20250514',
         },
       }),
     }

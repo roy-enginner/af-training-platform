@@ -5,6 +5,33 @@
 
 [functions]
   node_bundler = "esbuild"
+  # AI生成関数用のタイムアウト延長（デフォルト10秒→26秒）
+  # Note: 26秒はNetlify無料プランの最大値
+  external_node_modules = ["@anthropic-ai/sdk"]
+
+# AI構成生成（長時間処理）
+[functions."generate-curriculum-structure"]
+  timeout = 60
+
+# AIコンテンツ生成（長時間処理）
+[functions."generate-curriculum-content"]
+  timeout = 60
+
+# 素材からのカリキュラム生成
+[functions."generate-curriculum-from-material"]
+  timeout = 60
+
+# チャプター再生成
+[functions."regenerate-chapter"]
+  timeout = 60
+
+# チャット送信
+[functions."chat-send"]
+  timeout = 30
+
+# QA回答
+[functions."qa-ask"]
+  timeout = 30
 
 # SPAリダイレクト（force=falseで関数や静的ファイルを優先）
 [[redirects]]

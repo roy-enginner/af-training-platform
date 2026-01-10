@@ -180,7 +180,7 @@ ${difficultyLabel}
     // Call Claude Opus 4.5 API for structure generation
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-5-20251101',
-      max_tokens: 2048,
+      max_tokens: 32864,
       messages: [
         {
           role: 'user',

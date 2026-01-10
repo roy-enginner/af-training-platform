@@ -12,7 +12,7 @@ import {
   AcademicCapIcon,
 } from '@heroicons/react/24/outline'
 import { Button, Input, ModalFooter, Alert, Badge } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
+import { apiPost, ApiError } from '@/lib/api'
 import type { DifficultyLevel } from '@/types/database'
 
 const generateSchema = z.object({
@@ -107,41 +107,15 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
     setFormData(data)
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        setError('ログインセッションが切れています。再ログインしてください。')
-        return
-      }
-
-      const response = await fetch('/.netlify/functions/generate-curriculum-structure', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          goal: data.goal,
-          targetAudience: data.targetAudience,
-          durationMinutes: data.durationMinutes,
-          difficultyLevel: data.difficultyLevel,
-        }),
+      const result = await apiPost<{
+        structure: GeneratedStructure
+        usage: { inputTokens: number; outputTokens: number; model: string }
+      }>('generate-curriculum-structure', {
+        goal: data.goal,
+        targetAudience: data.targetAudience,
+        durationMinutes: data.durationMinutes,
+        difficultyLevel: data.difficultyLevel,
       })
-
-      // レスポンスがJSONかどうか確認
-      const contentType = response.headers.get('content-type')
-      if (!contentType || !contentType.includes('application/json')) {
-        console.error('Unexpected response type:', contentType, 'Status:', response.status)
-        if (response.status === 404) {
-          throw new Error('APIエンドポイントが見つかりません。デプロイを確認してください。')
-        }
-        throw new Error(`サーバーエラーが発生しました (${response.status})。管理者に連絡してください。`)
-      }
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || '構成生成に失敗しました')
-      }
 
       setGeneratedStructure(result.structure)
       setUsageInfo({
@@ -153,7 +127,11 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
       setStep('structure')
     } catch (err) {
       console.error('Error generating structure:', err)
-      setError(err instanceof Error ? err.message : '構成生成に失敗しました')
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError(err instanceof Error ? err.message : '構成生成に失敗しました')
+      }
     } finally {
       setIsGenerating(false)
     }
@@ -168,45 +146,18 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
     setStep('content')
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        setError('ログインセッションが切れています。再ログインしてください。')
-        setStep('structure')
-        return
-      }
-
-      const response = await fetch('/.netlify/functions/generate-curriculum-content', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          goal: formData.goal,
-          targetAudience: generatedStructure.targetAudience,
-          difficultyLevel: generatedStructure.difficultyLevel,
-          curriculumName: generatedStructure.name,
-          curriculumDescription: generatedStructure.description,
-          chapters: generatedStructure.chapters,
-          tags: generatedStructure.tags,
-        }),
+      const result = await apiPost<{
+        curriculum: GeneratedCurriculum
+        usage: { inputTokens: number; outputTokens: number; model: string }
+      }>('generate-curriculum-content', {
+        goal: formData.goal,
+        targetAudience: generatedStructure.targetAudience,
+        difficultyLevel: generatedStructure.difficultyLevel,
+        curriculumName: generatedStructure.name,
+        curriculumDescription: generatedStructure.description,
+        chapters: generatedStructure.chapters,
+        tags: generatedStructure.tags,
       })
-
-      // レスポンスがJSONかどうか確認
-      const contentType = response.headers.get('content-type')
-      if (!contentType || !contentType.includes('application/json')) {
-        console.error('Unexpected response type:', contentType, 'Status:', response.status)
-        if (response.status === 404) {
-          throw new Error('APIエンドポイントが見つかりません。デプロイを確認してください。')
-        }
-        throw new Error(`サーバーエラーが発生しました (${response.status})。管理者に連絡してください。`)
-      }
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || 'コンテンツ生成に失敗しました')
-      }
 
       setGeneratedCurriculum(result.curriculum)
       setUsageInfo((prev) => ({
@@ -219,7 +170,11 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
       setStep('complete')
     } catch (err) {
       console.error('Error generating content:', err)
-      setError(err instanceof Error ? err.message : 'コンテンツ生成に失敗しました')
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError(err instanceof Error ? err.message : 'コンテンツ生成に失敗しました')
+      }
       setStep('structure')
     } finally {
       setIsGenerating(false)

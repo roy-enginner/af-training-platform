@@ -121,7 +121,7 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
       setUsageInfo({
         structure: {
           tokens: result.usage.inputTokens + result.usage.outputTokens,
-          model: 'Claude Opus 4.5',
+          model: 'Claude Sonnet 4',
         },
       })
       setStep('structure')
@@ -240,7 +240,7 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
           <div className="text-sm">
             <p className="font-medium text-text">Step 1: 構成の自動生成</p>
             <p className="text-text-light mt-1">
-              Claude Opus 4.5 がカリキュラムの構成を設計します。
+              Claude Sonnet 4 がカリキュラムの構成を設計します。
               構成を確認・承認後、詳細コンテンツを生成します。
             </p>
           </div>

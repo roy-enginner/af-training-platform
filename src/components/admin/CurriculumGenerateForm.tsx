@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -138,6 +138,12 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
     },
   })
 
+  // stepの現在値を参照するためのref（useEffect内でstale closureを回避）
+  const stepRef = useRef(step)
+  useEffect(() => {
+    stepRef.current = step
+  }, [step])
+
   // Realtime subscription でジョブの進捗を監視
   useEffect(() => {
     if (!currentJobId) return
@@ -157,7 +163,8 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
           },
           (payload) => {
             const job = payload.new as CurriculumJob
-            console.log('Job update received:', job)
+            const currentStep = stepRef.current
+            console.log('Job update received:', job, 'current step:', currentStep)
 
             setJobProgress(job.progress)
             setJobStatus(job.status)
@@ -165,7 +172,7 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
 
             // 完了時の処理
             if (job.status === 'completed' && job.result) {
-              if (step === 'structure_generating') {
+              if (currentStep === 'structure_generating') {
                 // 構成生成完了
                 setGeneratedStructure(job.result as GeneratedStructure)
                 setUsageInfo((prev) => ({
@@ -177,7 +184,7 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
                 }))
                 setStep('structure_review')
                 setCurrentJobId(null)
-              } else if (step === 'content_generating') {
+              } else if (currentStep === 'content_generating') {
                 // コンテンツ生成完了
                 setGeneratedCurriculum(job.result as GeneratedCurriculum)
                 setUsageInfo((prev) => ({
@@ -195,9 +202,9 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
             // エラー時の処理
             if (job.status === 'failed') {
               setError(job.error_message || '生成中にエラーが発生しました')
-              if (step === 'structure_generating') {
+              if (currentStep === 'structure_generating') {
                 setStep('input')
-              } else if (step === 'content_generating') {
+              } else if (currentStep === 'content_generating') {
                 setStep('structure_review')
               }
               setCurrentJobId(null)
@@ -214,7 +221,7 @@ export function CurriculumGenerateForm({ onGenerated, onCancel }: CurriculumGene
         supabase.removeChannel(channel)
       }
     }
-  }, [currentJobId, step])
+  }, [currentJobId]) // stepを依存配列から削除
 
   // 構成生成ジョブを作成
   const handleGenerateStructure = useCallback(async (data: GenerateFormData) => {

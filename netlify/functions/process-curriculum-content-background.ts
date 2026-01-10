@@ -1,32 +1,13 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
-
-// ジョブの進捗を更新するヘルパー関数
-async function updateJobProgress(
-  supabase: SupabaseClient,
-  jobId: string,
-  updates: {
-    status?: string
-    progress?: number
-    current_step?: string
-    result?: unknown
-    error_message?: string
-    tokens_used?: number
-    model_used?: string
-    started_at?: string
-    completed_at?: string
-  }
-) {
-  const { error } = await supabase
-    .from('curriculum_generation_jobs')
-    .update(updates)
-    .eq('id', jobId)
-
-  if (error) {
-    console.error('Failed to update job progress:', error)
-  }
-}
+import {
+  createSupabaseAdmin,
+  updateJobProgress,
+  markJobAsFailed,
+  validateInternalSecret,
+  getDifficultyLabel,
+} from './shared/job-utils'
+import { parseAiJsonResponse } from './shared/json-utils'
 
 interface ChapterStructure {
   order: number
@@ -34,6 +15,11 @@ interface ChapterStructure {
   summary: string
   learningObjectives: string[]
   estimatedMinutes: number
+}
+
+interface GeneratedChapterContent {
+  content: string
+  taskDescription: string
 }
 
 interface GeneratedChapter {
@@ -44,24 +30,29 @@ interface GeneratedChapter {
 }
 
 const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
-  console.log('Content generation background function started')
+  console.log('Background function started: content generation')
+
+  // 内部シークレット認証
+  const providedSecret = event.headers['x-internal-secret']
+  if (!validateInternalSecret(providedSecret)) {
+    console.error('Invalid internal secret')
+    return { statusCode: 403, body: 'Forbidden' }
+  }
 
   // 環境変数チェック
-  const supabaseUrl = process.env.VITE_SUPABASE_URL
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY
-
-  if (!supabaseUrl || !supabaseServiceKey || !anthropicApiKey) {
-    console.error('Missing environment variables')
+  if (!anthropicApiKey) {
+    console.error('Missing Anthropic API key')
     return { statusCode: 500, body: 'Configuration error' }
   }
 
-  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  })
+  let supabaseAdmin
+  try {
+    supabaseAdmin = createSupabaseAdmin()
+  } catch (error) {
+    console.error('Failed to create Supabase client:', error)
+    return { statusCode: 500, body: 'Configuration error' }
+  }
 
   // リクエストボディからジョブIDを取得
   let jobId: string
@@ -126,11 +117,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     const { structure } = inputParams
     const chapters = structure.chapters
 
-    const difficultyLabel = {
-      beginner: '初級（基礎から丁寧に説明）',
-      intermediate: '中級（基本は理解している前提で応用的な内容）',
-      advanced: '上級（専門的な内容を深掘り）',
-    }[inputParams.difficultyLevel] || '初級'
+    const difficultyLabel = getDifficultyLabel(inputParams.difficultyLevel)
 
     // 各チャプターのコンテンツを生成
     const generatedChapters: GeneratedChapter[] = []
@@ -206,21 +193,8 @@ ${chapterContext}
         throw new Error(`チャプター「${chapter.title}」のコンテンツ生成に失敗しました`)
       }
 
-      // JSONをパース
-      let jsonStr = textContent.text.trim()
-      if (jsonStr.startsWith('```json')) {
-        jsonStr = jsonStr.slice(7)
-      } else if (jsonStr.startsWith('```')) {
-        jsonStr = jsonStr.slice(3)
-      }
-      if (jsonStr.endsWith('```')) {
-        jsonStr = jsonStr.slice(0, -3)
-      }
-
-      const chapterContent = JSON.parse(jsonStr.trim()) as {
-        content: string
-        taskDescription: string
-      }
+      // JSONをパース（共通ユーティリティ使用）
+      const chapterContent = parseAiJsonResponse<GeneratedChapterContent>(textContent.text)
 
       generatedChapters.push({
         title: chapter.title,
@@ -230,7 +204,7 @@ ${chapterContext}
       })
     }
 
-    // 解析中に更新
+    // 最終処理
     await updateJobProgress(supabaseAdmin, jobId, {
       status: 'parsing',
       progress: 95,
@@ -282,13 +256,7 @@ ${chapterContext}
     }
 
     // 失敗を記録
-    await updateJobProgress(supabaseAdmin, jobId, {
-      status: 'failed',
-      progress: 0,
-      current_step: 'エラーが発生しました',
-      error_message: errorMessage,
-      completed_at: new Date().toISOString(),
-    })
+    await markJobAsFailed(supabaseAdmin, jobId, errorMessage)
 
     return { statusCode: 500, body: errorMessage }
   }

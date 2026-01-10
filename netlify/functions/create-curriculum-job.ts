@@ -1,6 +1,12 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 import { getCorsHeaders, createPreflightResponse } from './shared/cors'
+import {
+  MIN_GOAL_LENGTH,
+  DEFAULT_TARGET_AUDIENCE,
+  DEFAULT_DURATION_MINUTES,
+  DEFAULT_DIFFICULTY_LEVEL,
+} from './shared/job-utils'
 
 // ジョブ作成リクエストの型
 interface CreateJobRequest {
@@ -108,11 +114,11 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       }
     }
 
-    if (!body.goal || body.goal.trim().length < 10) {
+    if (!body.goal || body.goal.trim().length < MIN_GOAL_LENGTH) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: '研修ゴールを10文字以上で入力してください' }),
+        body: JSON.stringify({ error: `研修ゴールを${MIN_GOAL_LENGTH}文字以上で入力してください` }),
       }
     }
 
@@ -134,9 +140,9 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     // ジョブを作成
     const inputParams = {
       goal: body.goal,
-      targetAudience: body.targetAudience || '企業の一般社員',
-      durationMinutes: body.durationMinutes || 60,
-      difficultyLevel: body.difficultyLevel || 'beginner',
+      targetAudience: body.targetAudience || DEFAULT_TARGET_AUDIENCE,
+      durationMinutes: body.durationMinutes || DEFAULT_DURATION_MINUTES,
+      difficultyLevel: body.difficultyLevel || DEFAULT_DIFFICULTY_LEVEL,
       ...(body.structure && { structure: body.structure }),
     }
 
@@ -168,16 +174,44 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       ? `${process.env.URL || 'http://localhost:4444'}/.netlify/functions/process-curriculum-structure-background`
       : `${process.env.URL || 'http://localhost:4444'}/.netlify/functions/process-curriculum-content-background`
 
+    // 内部通信用シークレット
+    const internalSecret = process.env.INTERNAL_FUNCTION_SECRET
+
     // Background Functionを非同期で呼び出し（レスポンスを待たない）
     fetch(backgroundFunctionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(internalSecret && { 'x-internal-secret': internalSecret }),
       },
       body: JSON.stringify({ jobId: job.id }),
-    }).catch(err => {
-      console.error('Failed to trigger background function:', err)
     })
+      .then(async (response) => {
+        // Background Functionが即座にエラーを返した場合
+        if (!response.ok && response.status !== 202) {
+          console.error('Background function returned error:', response.status)
+          await supabaseAdmin
+            .from('curriculum_generation_jobs')
+            .update({
+              status: 'failed',
+              error_message: 'Background functionの起動に失敗しました',
+              completed_at: new Date().toISOString(),
+            })
+            .eq('id', job.id)
+        }
+      })
+      .catch(async (err) => {
+        console.error('Failed to trigger background function:', err)
+        // トリガー失敗時はジョブを失敗状態に更新
+        await supabaseAdmin
+          .from('curriculum_generation_jobs')
+          .update({
+            status: 'failed',
+            error_message: 'Background functionの起動に失敗しました',
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', job.id)
+      })
 
     return {
       statusCode: 200,

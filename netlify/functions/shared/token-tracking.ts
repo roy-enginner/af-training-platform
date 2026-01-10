@@ -278,6 +278,21 @@ export function calculateCost(
 }
 
 // ============================================
+// 内部型定義
+// ============================================
+interface AIModelRelation {
+  model_id: string | null
+}
+
+interface UsageSummaryRow {
+  input_tokens: number | null
+  output_tokens: number | null
+  estimated_cost: number | null
+  session_id: string | null
+  ai_models: AIModelRelation | null
+}
+
+// ============================================
 // 使用量サマリー取得
 // ============================================
 export interface UsageSummary {
@@ -371,6 +386,9 @@ export async function getUsageSummary(
     }
   }
 
+  // 型アサーションを使用
+  const typedData = data as UsageSummaryRow[]
+
   // 集計
   let totalInputTokens = 0
   let totalOutputTokens = 0
@@ -383,7 +401,7 @@ export async function getUsageSummary(
     count: number
   }> = {}
 
-  for (const row of data) {
+  for (const row of typedData) {
     totalInputTokens += row.input_tokens || 0
     totalOutputTokens += row.output_tokens || 0
     totalCost += row.estimated_cost || 0
@@ -392,8 +410,7 @@ export async function getUsageSummary(
     }
 
     // モデル別集計
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const modelId = (row.ai_models as any)?.model_id || 'unknown'
+    const modelId = row.ai_models?.model_id || 'unknown'
     if (!byModel[modelId]) {
       byModel[modelId] = { inputTokens: 0, outputTokens: 0, cost: 0, count: 0 }
     }

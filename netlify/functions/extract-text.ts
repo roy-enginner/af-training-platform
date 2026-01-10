@@ -1,8 +1,9 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 import { getCorsHeaders, createPreflightResponse } from './shared/cors'
-// PDF解析用
-import pdf from 'pdf-parse'
+// PDF解析用（CommonJSモジュール）
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdf = require('pdf-parse')
 // Excel解析用
 import * as XLSX from 'xlsx'
 

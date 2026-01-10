@@ -1,5 +1,5 @@
 // ============================================
-// エスカレーション通知 API
+// エスカレーション通知 API（内部呼び出し専用）
 // POST /api/escalation-notify
 // ============================================
 
@@ -13,6 +13,9 @@ import {
   createEscalationNotification,
 } from './shared/teams-webhook'
 
+// 内部呼び出し用シークレットトークン（環境変数で設定）
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET
+
 // ============================================
 // ハンドラー
 // ============================================
@@ -25,6 +28,20 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
   const origin = event.headers.origin
   const headers = getCorsHeaders(origin)
+
+  // 内部呼び出し認証チェック
+  // シークレットトークンが環境変数に設定されている場合のみ検証
+  if (INTERNAL_API_SECRET) {
+    const authHeader = event.headers['x-internal-secret'] || event.headers['X-Internal-Secret']
+    if (authHeader !== INTERNAL_API_SECRET) {
+      console.warn('Unauthorized escalation-notify attempt')
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({ error: '認証エラー: 内部APIトークンが無効です' }),
+      }
+    }
+  }
 
   try {
     const body = JSON.parse(event.body || '{}')

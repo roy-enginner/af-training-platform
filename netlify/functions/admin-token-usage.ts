@@ -8,6 +8,48 @@ import { checkAuth, handlePreflight, checkMethod } from './shared/auth'
 import { getCorsHeaders } from './shared/cors'
 import { ErrorResponses } from './shared/errors'
 
+// ============================================
+// Supabaseリレーション型定義
+// ============================================
+interface ProfileRelation {
+  id: string
+  name: string | null
+  email: string | null
+}
+
+interface GroupRelation {
+  id: string
+  name: string | null
+}
+
+interface CompanyRelation {
+  id: string
+  name: string | null
+}
+
+interface AIModelRelation {
+  id: string
+  display_name: string | null
+  provider: string | null
+}
+
+interface TokenUsageRow {
+  id: string
+  profile_id: string | null
+  group_id: string | null
+  company_id: string | null
+  ai_model_id: string | null
+  input_tokens: number | null
+  output_tokens: number | null
+  estimated_cost: number | null
+  usage_date: string
+  session_id: string | null
+  profiles: ProfileRelation | null
+  groups: GroupRelation | null
+  companies: CompanyRelation | null
+  ai_models: AIModelRelation | null
+}
+
 export const handler: Handler = async (event: HandlerEvent) => {
   const preflightResponse = handlePreflight(event)
   if (preflightResponse) return preflightResponse
@@ -126,7 +168,10 @@ export const handler: Handler = async (event: HandlerEvent) => {
       users: Set<string>
     }> = {}
 
-    usageData?.forEach((row) => {
+    // 型アサーションを使用してデータを処理
+    const typedUsageData = usageData as TokenUsageRow[] | null
+
+    typedUsageData?.forEach((row) => {
       const inputTokens = row.input_tokens || 0
       const outputTokens = row.output_tokens || 0
       const cost = row.estimated_cost || 0
@@ -159,8 +204,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
       // ユーザー別集計
       if (row.profile_id) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const profile = row.profiles as any
+        const profile = row.profiles
         if (!byUser[row.profile_id]) {
           byUser[row.profile_id] = {
             profileId: row.profile_id,
@@ -180,8 +224,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
       // モデル別集計
       if (row.ai_model_id) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const model = row.ai_models as any
+        const model = row.ai_models
         if (!byModel[row.ai_model_id]) {
           byModel[row.ai_model_id] = {
             modelId: row.ai_model_id,
@@ -201,8 +244,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
       // 企業別集計
       if (row.company_id) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const company = row.companies as any
+        const company = row.companies
         if (!byCompany[row.company_id]) {
           byCompany[row.company_id] = {
             companyId: row.company_id,

@@ -243,7 +243,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resetPassword = async (email: string) => {
     try {
-      const appUrl = import.meta.env.VITE_APP_URL || window.location.origin
+      // 末尾スラッシュを削除して二重スラッシュを防止
+      const appUrl = (import.meta.env.VITE_APP_URL || window.location.origin).replace(/\/$/, '')
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: appUrl + '/reset-password',
       })

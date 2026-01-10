@@ -12,6 +12,71 @@ import { checkTokenLimits, recordTokenUsage, calculateCost } from './shared/toke
 import { sanitizeUserInput } from './shared/validation'
 
 // ============================================
+// エスカレーション通知ペイロード型
+// ============================================
+interface EscalationNotifyPayload {
+  sessionId: string
+  profileId: string
+  trigger?: string
+  keywords?: string[]
+  message: string
+  userName: string
+  userEmail: string
+  companyId?: string | null
+  groupId?: string | null
+}
+
+// ============================================
+// エスカレーション通知（リトライ付き）
+// ============================================
+async function sendEscalationNotifyWithRetry(
+  payload: EscalationNotifyPayload,
+  maxRetries: number = 3
+): Promise<void> {
+  const internalSecret = process.env.INTERNAL_API_SECRET
+  const notifyUrl = `${process.env.URL}/.netlify/functions/escalation-notify`
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(notifyUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // 内部API認証ヘッダー（設定されている場合のみ）
+          ...(internalSecret ? { 'X-Internal-Secret': internalSecret } : {}),
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (response.ok) {
+        console.log(`Escalation notification sent successfully (attempt ${attempt})`)
+        return
+      }
+
+      // 4xx エラーはリトライしない（認証エラー等）
+      if (response.status >= 400 && response.status < 500) {
+        console.error(`Escalation notify failed with client error: ${response.status}`)
+        return
+      }
+
+      // 5xx エラーはリトライ
+      console.warn(`Escalation notify attempt ${attempt} failed with status ${response.status}`)
+    } catch (err) {
+      console.error(`Escalation notify attempt ${attempt} error:`, err)
+    }
+
+    // リトライ前に待機（指数バックオフ: 1秒, 2秒, 4秒）
+    if (attempt < maxRetries) {
+      const delay = Math.pow(2, attempt - 1) * 1000
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
+
+  // 全リトライ失敗
+  console.error(`Escalation notification failed after ${maxRetries} attempts for session ${payload.sessionId}`)
+}
+
+// ============================================
 // エスカレーションキーワード
 // ============================================
 const ESCALATION_KEYWORDS = {
@@ -179,20 +244,18 @@ export const handler: Handler = async (event: HandlerEvent) => {
         })
         .eq('id', session.id)
 
-      // エスカレーション通知を非同期で送信（別関数を呼び出し）
-      fetch(`${process.env.URL}/.netlify/functions/escalation-notify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: session.id,
-          profileId: user.id,
-          trigger: escalationCheck.trigger,
-          keywords: escalationCheck.keywords,
-          message: sanitizedMessage,
-          userName: profile.name,
-          userEmail: profile.email,
-        }),
-      }).catch(err => console.error('Escalation notify error:', err))
+      // エスカレーション通知を非同期で送信（リトライ付き）
+      sendEscalationNotifyWithRetry({
+        sessionId: session.id,
+        profileId: user.id,
+        trigger: escalationCheck.trigger,
+        keywords: escalationCheck.keywords,
+        message: sanitizedMessage,
+        userName: profile.name,
+        userEmail: profile.email,
+        companyId: profile.company_id,
+        groupId: profile.group_id,
+      })
     }
 
     // 会話履歴取得

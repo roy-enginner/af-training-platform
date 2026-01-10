@@ -3,7 +3,8 @@
 // POST /api/chat-send
 // ============================================
 
-import type { Handler, HandlerEvent } from '@netlify/functions'
+import type { Handler, HandlerEvent, HandlerResponse } from '@netlify/functions'
+import { SupabaseClient } from '@supabase/supabase-js'
 import { checkAuth, handlePreflight, checkMethod } from './shared/auth'
 import { getCorsHeaders } from './shared/cors'
 import { ErrorResponses } from './shared/errors'
@@ -251,6 +252,8 @@ export const handler: Handler = async (event: HandlerEvent) => {
     })
 
     // SSEレスポンスを返す
+    // Note: Netlify Functions の型定義は ReadableStream を body として想定していないため、
+    // 型アサーションが必要。実際のランタイムでは正しく動作する。
     return {
       statusCode: 200,
       headers: {
@@ -261,8 +264,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
       },
       body: stream,
       isBase64Encoded: false,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any
+    } as unknown as HandlerResponse
   } catch (error) {
     console.error('Chat send error:', error)
     return ErrorResponses.serverError(headers, 'チャット送信に失敗しました')
@@ -273,7 +275,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
 // システムプロンプト構築
 // ============================================
 async function buildSystemPrompt(
-  supabase: ReturnType<typeof import('./shared/auth').createSupabaseAdmin>,
+  supabase: SupabaseClient,
   sessionType: string,
   curriculumId?: string,
   chapterId?: string

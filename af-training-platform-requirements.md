@@ -320,24 +320,83 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 3. 必要に応じてチャプター再生成
 4. 対応完了をマーク
 
-### 4.10 チャット機能（未実装）
+### 4.10 AIチャット機能（実装済み）
 
 #### 実装方式
 - フルスクラッチ（Netlify Functions + 各AI API直接連携）
+- SSE（Server-Sent Events）によるストリーミング応答
 - 会話履歴はSupabaseに保存
 
-#### 機能要件
+#### マルチプロバイダー対応
+| プロバイダー | モデル例 | 備考 |
+|-------------|---------|------|
+| OpenAI | GPT-4o, GPT-4-turbo | ストリーミング対応 |
+| Anthropic | Claude Sonnet 4.5, Claude Haiku 4.5 | ストリーミング対応 |
+| Google | Gemini 2.5 Pro, Gemini 2.5 Flash | ストリーミング対応 |
+
+#### 機能要件（実装済み）
 - 複数AIモデルの切り替え（研修生が選択可能）
 - 会話履歴の保存・振り返り
-- 日次トークン制限の表示
-- ストリーミング応答対応
+- SSEストリーミング応答対応
+- セッション管理（CRUD）
+- 学習ページへのフローティングチャットパネル統合
 
-#### 制限管理
+#### 制限管理（実装済み）
 - 研修生ごとの日次トークン数制限
 - 企業/グループごとの日次トークン数制限
 - 制限到達時のユーザーへの表示メッセージ
+- トークン使用量追跡・統計
 
-### 4.11 ユーザー属性管理（実装済みDB構造）
+### 4.11 QAチャットボット（実装済み）
+
+#### 概要
+- 研修生向けフローティングFABボタン（画面左下）
+- カリキュラム・ツール関連の質問対応
+- TraineeLayout全体で利用可能
+
+#### エスカレーション検知
+- キーワードベースの自動検知
+- トリガー: システムエラー、バグ報告、緊急、手動、感情検知
+- 検知時に自動通知（メール/Teams）
+
+### 4.12 エスカレーション管理（実装済み）
+
+#### 通知チャンネル
+| チャンネル | 実装 | 備考 |
+|-----------|------|------|
+| メール | Resend | HTML形式通知 |
+| Teams | Webhook | アダプティブカード形式 |
+| Slack | Webhook | 将来対応予定 |
+
+#### エスカレーショントリガー
+| トリガー | 説明 |
+|---------|------|
+| system_error | システムエラー検知 |
+| bug_report | バグ報告キーワード |
+| urgent | 緊急キーワード |
+| manual | 手動エスカレーション |
+| sentiment | 感情検知（ネガティブ） |
+
+#### 管理機能
+- 通知設定のCRUD（企業/グループ単位）
+- 通知履歴の閲覧・解決管理
+- キーワードカスタマイズ
+
+### 4.13 トークン使用量管理（実装済み）
+
+#### 統計機能
+- 日次/週次/月次の使用量集計
+- モデル別使用量
+- ユーザー別使用量（上位20名）
+- 企業別使用量
+- 推定コスト計算
+
+#### 可視化ダッシュボード
+- サマリーカード（総トークン、推定コスト、アクティブユーザー、セッション数）
+- 日付別グラフ（入力/出力トークン内訳）
+- テーブル形式の詳細表示
+
+### 4.14 ユーザー属性管理（実装済みDB構造）
 
 #### 柔軟な属性システム
 - **属性定義マスタ**: `attribute_definitions` テーブル
@@ -351,7 +410,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 | skill_level | AIスキルレベル | select | 初級, 中級, 上級 |
 | tags | タグ | text | - |
 
-### 4.12 進捗管理・分析ダッシュボード
+### 4.15 進捗管理・分析ダッシュボード
 
 #### 研修生向け
 - 自分の進捗状況表示
@@ -365,7 +424,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - チャット利用統計（質問傾向等）
 - 研修完了率・離脱率分析
 
-### 4.13 通知機能
+### 4.16 通知機能
 
 #### リマインド通知（メール）
 - 日次で未完了チャプターをリマインド
@@ -376,7 +435,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 - メール
 - Microsoft Teams
 
-### 4.14 PDF出力
+### 4.17 PDF出力
 
 #### 出力対象
 - カリキュラム内容（テキスト部分のみ）
@@ -385,7 +444,7 @@ Assist FrontierのAI研修サービス用プラットフォーム。企業向け
 #### 用途
 - 集合研修での印刷配布用
 
-### 4.15 決済連携（Square）
+### 4.18 決済連携（Square）
 
 #### 実装範囲（半自動連携）
 - 管理画面からSquare請求書を発行
@@ -682,14 +741,40 @@ source-materials/
   └── url-cache/{hash}.html
 ```
 
-### 5.7 チャット関連テーブル（未実装）
+### 5.7 チャット関連テーブル（実装済み）
+
+#### ai_models（AIモデル設定）
+```sql
+- id: uuid (PK)
+- provider: enum ('openai', 'anthropic', 'google')
+- model_id: text
+- display_name: text
+- input_token_cost: decimal(10, 6) -- 1Kトークンあたりコスト
+- output_token_cost: decimal(10, 6)
+- max_context_tokens: integer (default: 128000)
+- supports_streaming: boolean (default: true)
+- is_active: boolean (default: true)
+- created_at: timestamptz
+- updated_at: timestamptz
+```
 
 #### chat_sessions（チャットセッション）
 ```sql
 - id: uuid (PK)
-- user_id: uuid (FK -> profiles.id)
+- profile_id: uuid (FK -> profiles.id)
+- session_type: enum ('learning', 'qa', 'general')
+- status: enum ('active', 'completed', 'escalated')
+- curriculum_id: uuid (FK -> curricula.id, nullable)
 - chapter_id: uuid (FK -> chapters.id, nullable)
-- model: text
+- ai_model_id: uuid (FK -> ai_models.id, nullable)
+- system_prompt: text (nullable)
+- title: text (nullable)
+- metadata: jsonb (nullable)
+- escalated_at: timestamptz (nullable)
+- escalation_reason: text (nullable)
+- started_at: timestamptz
+- last_message_at: timestamptz
+- completed_at: timestamptz (nullable)
 - created_at: timestamptz
 ```
 
@@ -697,21 +782,68 @@ source-materials/
 ```sql
 - id: uuid (PK)
 - session_id: uuid (FK -> chat_sessions.id)
-- role: enum ('user', 'assistant')
+- role: enum ('user', 'assistant', 'system')
 - content: text
-- token_count: integer
+- input_tokens: integer (nullable)
+- output_tokens: integer (nullable)
+- metadata: jsonb (nullable)
 - created_at: timestamptz
 ```
 
 #### token_usage（トークン使用量）
 ```sql
 - id: uuid (PK)
-- user_id: uuid (FK -> profiles.id)
-- group_id: uuid (FK -> groups.id)
-- date: date
-- input_tokens: integer
-- output_tokens: integer
-- model: text
+- profile_id: uuid (FK -> profiles.id)
+- group_id: uuid (FK -> groups.id, nullable)
+- company_id: uuid (FK -> companies.id, nullable)
+- ai_model_id: uuid (FK -> ai_models.id, nullable)
+- input_tokens: integer (default: 0)
+- output_tokens: integer (default: 0)
+- estimated_cost: decimal(10, 4) (nullable)
+- usage_date: date (default: CURRENT_DATE)
+- session_id: uuid (FK -> chat_sessions.id, nullable)
+- created_at: timestamptz
+```
+
+### 5.8 エスカレーション関連テーブル（実装済み）
+
+#### escalation_configs（エスカレーション設定）
+```sql
+- id: uuid (PK)
+- company_id: uuid (FK -> companies.id, nullable)
+- group_id: uuid (FK -> groups.id, nullable)
+- name: text
+- description: text (nullable)
+- channels: enum[] ('email', 'teams', 'slack')
+- email_recipients: text[] (nullable)
+- email_cc: text[] (nullable)
+- teams_webhook_url: text (nullable)
+- teams_channel_name: text (nullable)
+- slack_webhook_url: text (nullable)
+- slack_channel: text (nullable)
+- triggers: enum[] ('system_error', 'bug_report', 'urgent', 'manual', 'sentiment')
+- trigger_keywords: jsonb (nullable)
+- is_active: boolean (default: true)
+- priority: integer (default: 0)
+- created_at: timestamptz
+- updated_at: timestamptz
+```
+
+#### escalation_logs（エスカレーション履歴）
+```sql
+- id: uuid (PK)
+- config_id: uuid (FK -> escalation_configs.id, nullable)
+- session_id: uuid (FK -> chat_sessions.id, nullable)
+- message_id: uuid (FK -> chat_messages.id, nullable)
+- profile_id: uuid (FK -> profiles.id, nullable)
+- trigger: enum ('system_error', 'bug_report', 'urgent', 'manual', 'sentiment')
+- trigger_details: jsonb (nullable)
+- channels_notified: enum[] ('email', 'teams', 'slack')
+- notification_results: jsonb (nullable)
+- is_resolved: boolean (default: false)
+- resolved_at: timestamptz (nullable)
+- resolved_by: uuid (FK -> profiles.id, nullable)
+- resolution_notes: text (nullable)
 - created_at: timestamptz
 ```
 
@@ -761,6 +893,32 @@ source-materials/
 | `shared/validation.ts` | 入力サニタイズ、ファイル検証 |
 | `shared/constants.ts` | 共通定数（ファイルサイズ、入力制限等） |
 | `shared/cors.ts` | CORS設定 |
+| `shared/ai-providers.ts` | OpenAI/Anthropic/Google統一インターフェース |
+| `shared/token-tracking.ts` | トークン追跡・制限チェック |
+| `shared/teams-webhook.ts` | Microsoft Teams Webhook送信 |
+
+### 6.6 AIチャットFunctions（実装済み）
+
+| Function | メソッド | 用途 |
+|----------|----------|------|
+| `chat-send` | POST | チャット送信（SSEストリーミング対応）- trainee以上 |
+| `chat-sessions` | GET/POST/DELETE | チャットセッションCRUD - trainee以上 |
+| `qa-ask` | POST | QA質問送信（SSEストリーミング対応）- trainee以上 |
+
+### 6.7 エスカレーションFunctions（実装済み）
+
+| Function | メソッド | 用途 |
+|----------|----------|------|
+| `escalation-notify` | POST | エスカレーション通知送信（Resend/Teams） |
+| `admin-escalation` | GET/POST/PUT/DELETE | エスカレーション設定・履歴管理 - super_admin |
+
+### 6.8 管理・統計Functions（実装済み）
+
+| Function | メソッド | 用途 |
+|----------|----------|------|
+| `admin-token-usage` | GET | トークン使用量統計取得 - super_admin |
+| `admin-feedback-stats` | GET | フィードバック統計取得 - super_admin |
+| `admin-feedback-suggest` | POST | AI改善サジェスト生成 - super_admin |
 
 ---
 
@@ -822,39 +980,61 @@ source-materials/
 - [x] カリキュラム学習ページ（チャプター別学習）
 - [x] 進捗管理機能（自動保存・完了ステータス管理）
 
-### Phase 4: AIチャット機能 ← **次フェーズ**
+### Phase 4: AIチャット・QAボット・エスカレーション・フィードバック ✅ 完了
 
 #### 4.1 データベース設計
-- [ ] chat_sessions テーブル作成
-- [ ] chat_messages テーブル作成
-- [ ] token_usage テーブル作成
-- [ ] RLSポリシー設定
+- [x] ai_models テーブル作成（マルチプロバイダー対応）
+- [x] chat_sessions テーブル作成
+- [x] chat_messages テーブル作成
+- [x] token_usage テーブル作成
+- [x] escalation_configs テーブル作成
+- [x] escalation_logs テーブル作成
+- [x] RLSポリシー設定
 
 #### 4.2 バックエンド実装
-- [ ] `chat-send.ts` - メッセージ送信・AI応答取得
-- [ ] `chat-history.ts` - 会話履歴取得
-- [ ] `token-usage.ts` - トークン使用量確認
-- [ ] AI API統合
-  - OpenAI API連携（GPT-5.2シリーズ）
-  - Anthropic API連携（Claude 4.5シリーズ）
-  - Google AI API連携（Gemini 3シリーズ）
-- [ ] ストリーミング対応（SSE）
-- [ ] レート制限・トークン制限
+- [x] `chat-send.ts` - メッセージ送信・AI応答取得（SSEストリーミング）
+- [x] `chat-sessions.ts` - セッションCRUD
+- [x] `qa-ask.ts` - QA質問送信（SSEストリーミング）
+- [x] `escalation-notify.ts` - エスカレーション通知（Resend/Teams）
+- [x] `admin-escalation.ts` - エスカレーション設定管理
+- [x] `admin-token-usage.ts` - トークン使用量統計
+- [x] `admin-feedback-stats.ts` - フィードバック統計
+- [x] AI API統合（マルチプロバイダー）
+  - OpenAI API連携（GPT-4o, GPT-4-turbo）
+  - Anthropic API連携（Claude Sonnet 4.5, Claude Haiku 4.5）
+  - Google AI API連携（Gemini 2.5 Pro, Gemini 2.5 Flash）
+- [x] 共通モジュール（ai-providers.ts, token-tracking.ts, teams-webhook.ts）
 
-#### 4.3 フロントエンド実装
-- [ ] チャットUI基本実装
-  - メッセージ入力・送信
-  - 会話履歴表示
-  - ストリーミング表示
-- [ ] AIモデル切り替えUI
-- [ ] トークン使用量表示
-- [ ] 制限到達時の表示
-- [ ] 会話履歴管理（セッション一覧、削除）
+#### 4.3 フロントエンド実装 - AIチャット
+- [x] ChatPanel（学習ページ用フローティングパネル）
+- [x] ChatMessage, ChatInput コンポーネント
+- [x] ModelSelector（AIモデル選択UI）
+- [x] SSEストリーミング表示
+- [x] セッション管理UI
+- [x] CurriculumLearningPageへの統合
 
-#### 4.4 チャプター連携
-- [ ] チャプター学習画面からのチャット起動
-- [ ] チャプターコンテキストの自動設定
-- [ ] ハンズオン課題のサポート機能
+#### 4.4 QAチャットボット
+- [x] QAChatBot.tsx（Floating FABボタン）
+- [x] QAChatWindow.tsx（会話ウィンドウ）
+- [x] TraineeLayoutへの統合
+- [x] エスカレーション検知機能
+
+#### 4.5 エスカレーション管理
+- [x] EscalationPage.tsx（管理画面）
+- [x] エスカレーション設定CRUD
+- [x] 通知履歴表示・解決管理
+- [x] Teams Webhook連携
+
+#### 4.6 フィードバック拡充
+- [x] FeedbackPage.tsx拡張（3タブ: 一覧/統計/AI改善）
+- [x] フィードバック統計ダッシュボード
+- [x] AI改善サジェスト生成機能
+
+#### 4.7 トークン使用量管理
+- [x] TokenUsagePage.tsx
+- [x] 日次/週次/月次集計
+- [x] モデル別・ユーザー別・企業別統計
+- [x] 推定コスト表示
 
 ### Phase 5: レポート・分析機能
 - [ ] 管理者ダッシュボード強化
@@ -1003,3 +1183,11 @@ source-materials/
 | 2026/01/10 | Supabase新規テーブル追加（curriculum_series, source_materials, curriculum_templates, curriculum_versions, curriculum_feedback等） |
 | 2026/01/10 | Supabase Storage設定（source-materialsバケット） |
 | 2026/01/10 | Phase 4（AIチャット機能）詳細計画追加 |
+| 2026/01/10 | Phase 4実装完了: AIチャット機能（マルチプロバイダー対応、SSEストリーミング） |
+| 2026/01/10 | Phase 4実装完了: QAチャットボット（Floating FAB、TraineeLayout統合） |
+| 2026/01/10 | Phase 4実装完了: エスカレーション管理（設定CRUD、Resend/Teams通知、履歴管理） |
+| 2026/01/10 | Phase 4実装完了: トークン使用量管理（日次/週次/月次統計、推定コスト） |
+| 2026/01/10 | Phase 4実装完了: フィードバック統計ダッシュボード・AI改善サジェスト |
+| 2026/01/10 | Netlify Functions追加（chat-send, chat-sessions, qa-ask, escalation-notify, admin-escalation, admin-token-usage, admin-feedback-stats） |
+| 2026/01/10 | 共通モジュール追加（ai-providers.ts, token-tracking.ts, teams-webhook.ts） |
+| 2026/01/10 | Supabase新規テーブル追加（ai_models, chat_sessions, chat_messages, token_usage, escalation_configs, escalation_logs） |

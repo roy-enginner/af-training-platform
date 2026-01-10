@@ -251,9 +251,10 @@ export function UsersPage() {
 
       if (!emailResponse.ok) {
         console.error('Failed to send invitation email')
+        setSuccessMessage('ユーザーを作成しました（※招待メールの送信に失敗しました）')
+      } else {
+        setSuccessMessage('ユーザーを作成し、招待メールを送信しました')
       }
-
-      setSuccessMessage('ユーザーを作成し、招待メールを送信しました')
       setIsUserModalOpen(false)
       fetchUsers()
     } catch (err) {
@@ -314,9 +315,10 @@ export function UsersPage() {
 
       if (!emailResponse.ok) {
         console.error('Failed to send invitation email')
+        setSuccessMessage('ユーザーを作成しました（※招待メールの送信に失敗しました）')
+      } else {
+        setSuccessMessage('ユーザーを作成し、招待メールを送信しました')
       }
-
-      setSuccessMessage('ユーザーを作成し、招待メールを送信しました')
       setIsWizardModalOpen(false)
       fetchUsers()
     } catch (err) {

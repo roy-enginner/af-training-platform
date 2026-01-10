@@ -1,37 +1,425 @@
 import React, { useState, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRightIcon, ChevronDownIcon, BuildingOffice2Icon, BuildingOfficeIcon, UsersIcon, UserIcon, PencilIcon, TrashIcon, UserPlusIcon } from '@heroicons/react/24/outline'
+import {
+  ChevronRightIcon,
+  ChevronDownIcon,
+  BuildingOffice2Icon,
+  BuildingOfficeIcon,
+  UsersIcon,
+  UserIcon,
+  PencilIcon,
+  TrashIcon,
+  UserPlusIcon,
+} from '@heroicons/react/24/outline'
 import { Badge } from '@/components/ui'
 import type { Company, Department, Group, ProfileWithRelations } from '@/types/database'
 
+// ノードタイプ定義
 export type NodeType = 'company' | 'department' | 'group' | 'user'
 
+// ツリーノードのデータ構造
 export interface TreeNodeData {
-  id: string; type: NodeType; name: string; isActive?: boolean
-  meta?: { email?: string; role?: string; userCount?: number; groupCount?: number; departmentCount?: number }
-  children?: TreeNodeData[]; data?: Company | Department | Group | ProfileWithRelations
+  id: string
+  type: NodeType
+  name: string
+  isActive?: boolean
+  meta?: {
+    email?: string
+    role?: string
+    userCount?: number
+    groupCount?: number
+    departmentCount?: number
+  }
+  children?: TreeNodeData[]
+  data?: Company | Department | Group | ProfileWithRelations
 }
 
+// コンポーネントのProps
 interface OrganizationTreeProps {
-  companies: Company[]; departments: Department[]; groups: Group[]; users: ProfileWithRelations[]
-  onAddUser?: (group: Group) => void; onEditCompany?: (company: Company) => void
-  onEditDepartment?: (department: Department) => void; onEditGroup?: (group: Group) => void
-  onEditUser?: (user: ProfileWithRelations) => void; onDeleteUser?: (user: ProfileWithRelations) => void
+  companies: Company[]
+  departments: Department[]
+  groups: Group[]
+  users: ProfileWithRelations[]
+  onAddUser?: (group: Group) => void
+  onEditCompany?: (company: Company) => void
+  onEditDepartment?: (department: Department) => void
+  onEditGroup?: (group: Group) => void
+  onEditUser?: (user: ProfileWithRelations) => void
+  onDeleteUser?: (user: ProfileWithRelations) => void
 }
 
-interface ContextMenuState { isOpen: boolean; x: number; y: number; node: TreeNodeData | null }
+// コンテキストメニューの状態
+interface ContextMenuState {
+  isOpen: boolean
+  x: number
+  y: number
+  node: TreeNodeData | null
+}
 
-export function OrganizationTree({ companies, departments, groups, users, onAddUser, onEditCompany, onEditDepartment, onEditGroup, onEditUser, onDeleteUser }: OrganizationTreeProps) {
+// TODO: 大量データ（100+企業/1000+ユーザー）の場合は仮想スクロール（react-window等）導入を検討
+
+export function OrganizationTree({
+  companies,
+  departments,
+  groups,
+  users,
+  onAddUser,
+  onEditCompany,
+  onEditDepartment,
+  onEditGroup,
+  onEditUser,
+  onDeleteUser,
+}: OrganizationTreeProps) {
   const navigate = useNavigate()
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>({ isOpen: false, x: 0, y: 0, node: null })
-  const treeData = useMemo((): TreeNodeData[] => companies.map((co) => ({ id: 'company-' + co.id, type: 'company' as NodeType, name: co.name, isActive: co.is_active, meta: { userCount: users.filter(u => u.company_id === co.id).length }, children: departments.filter(d => d.company_id === co.id).map(dept => ({ id: 'dept-' + dept.id, type: 'department' as NodeType, name: dept.name, isActive: dept.is_active, children: groups.filter(g => g.department_id === dept.id).map(grp => ({ id: 'group-' + grp.id, type: 'group' as NodeType, name: grp.name, isActive: grp.is_active, meta: { userCount: users.filter(u => u.group_id === grp.id).length }, children: users.filter(u => u.group_id === grp.id).map(u => ({ id: 'user-' + u.id, type: 'user' as NodeType, name: u.name, meta: { role: u.role }, data: u })), data: grp })), data: dept })), data: co })), [companies, departments, groups, users])
-  const toggleNode = useCallback((id: string) => setExpandedNodes(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n }), [])
-  const expandAll = useCallback(() => { const s = new Set<string>(); const f = (ns: TreeNodeData[]) => ns.forEach(n => { if (n.children?.length) { s.add(n.id); f(n.children) } }); f(treeData); setExpandedNodes(s) }, [treeData])
-  const collapseAll = useCallback(() => setExpandedNodes(new Set()), [])
-  const handleContext = useCallback((e: React.MouseEvent, n: TreeNodeData) => { e.preventDefault(); setContextMenu({ isOpen: true, x: e.clientX, y: e.clientY, node: n }) }, [])
-  const closeContext = useCallback(() => setContextMenu({ isOpen: false, x: 0, y: 0, node: null }), [])
-  const icon = (t: NodeType) => t === 'company' ? <BuildingOffice2Icon className="w-4 h-4 text-blue-500"/> : t === 'department' ? <BuildingOfficeIcon className="w-4 h-4 text-green-500"/> : t === 'group' ? <UsersIcon className="w-4 h-4 text-purple-500"/> : <UserIcon className="w-4 h-4 text-gray-500"/>
-  const render = (n: TreeNodeData, d = 0): React.ReactElement => { const exp = expandedNodes.has(n.id), ch = n.children && n.children.length > 0; return (<div key={n.id}><div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer rounded-lg" style={{paddingLeft: 12 + d * 24}} onClick={() => { if (ch) toggleNode(n.id); if (n.type === 'group' && n.data) navigate('/admin/groups/' + (n.data as Group).id) }} onContextMenu={e => handleContext(e, n)}>{ch ? <button onClick={e => { e.stopPropagation(); toggleNode(n.id) }} className="p-0.5 hover:bg-gray-200 rounded">{exp ? <ChevronDownIcon className="w-4 h-4"/> : <ChevronRightIcon className="w-4 h-4"/>}</button> : <span className="w-5"/>}{icon(n.type)}<span className="flex-1 text-sm">{n.name}</span>{n.type === 'user' && n.meta?.role && <Badge variant={n.meta.role === 'super_admin' ? 'error' : n.meta.role === 'group_admin' ? 'warning' : 'primary'} size="sm">{n.meta.role === 'super_admin' ? 'SA' : n.meta.role === 'group_admin' ? 'GA' : 'TR'}</Badge>}{n.type !== 'user' && n.meta?.userCount !== undefined && <span className="text-xs text-text-light">{n.meta.userCount}</span>}</div>{exp && ch && <div>{n.children!.map(c => render(c, d + 1))}</div>}</div>) }
-  return (<div className="relative" onClick={closeContext}><div className="flex gap-2 mb-4"><button onClick={expandAll} className="px-3 py-1.5 text-sm hover:bg-gray-100 rounded-lg">Expand</button><button onClick={collapseAll} className="px-3 py-1.5 text-sm hover:bg-gray-100 rounded-lg">Collapse</button></div><div className="space-y-1">{treeData.map(n => render(n))}</div>{contextMenu.isOpen && contextMenu.node && <div className="fixed bg-white rounded-lg shadow-lg border py-1 z-50 min-w-[160px]" style={{left: contextMenu.x, top: contextMenu.y}} onClick={e => e.stopPropagation()}>{contextMenu.node.type === 'company' && <button onClick={() => { if (onEditCompany && contextMenu.node?.data) onEditCompany(contextMenu.node.data as Company); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"><PencilIcon className="w-4 h-4"/>Edit</button>}{contextMenu.node.type === 'department' && <button onClick={() => { if (onEditDepartment && contextMenu.node?.data) onEditDepartment(contextMenu.node.data as Department); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"><PencilIcon className="w-4 h-4"/>Edit</button>}{contextMenu.node.type === 'group' && <><button onClick={() => { if (contextMenu.node?.data) navigate('/admin/groups/' + (contextMenu.node.data as Group).id); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100">View</button><button onClick={() => { if (onAddUser && contextMenu.node?.data) onAddUser(contextMenu.node.data as Group); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"><UserPlusIcon className="w-4 h-4"/>Add</button><button onClick={() => { if (onEditGroup && contextMenu.node?.data) onEditGroup(contextMenu.node.data as Group); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"><PencilIcon className="w-4 h-4"/>Edit</button></>}{contextMenu.node.type === 'user' && <><button onClick={() => { if (onEditUser && contextMenu.node?.data) onEditUser(contextMenu.node.data as ProfileWithRelations); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"><PencilIcon className="w-4 h-4"/>Edit</button><button onClick={() => { if (onDeleteUser && contextMenu.node?.data) onDeleteUser(contextMenu.node.data as ProfileWithRelations); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 text-error flex gap-2"><TrashIcon className="w-4 h-4"/>Delete</button></>}</div>}</div>)
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    isOpen: false,
+    x: 0,
+    y: 0,
+    node: null,
+  })
+
+  // ユーザーノードを生成
+  const buildUserNode = useCallback((user: ProfileWithRelations): TreeNodeData => ({
+    id: `user-${user.id}`,
+    type: 'user',
+    name: user.name,
+    meta: { role: user.role },
+    data: user,
+  }), [])
+
+  // グループノードを生成
+  const buildGroupNode = useCallback((group: Group): TreeNodeData => {
+    const groupUsers = users.filter((u) => u.group_id === group.id)
+    return {
+      id: `group-${group.id}`,
+      type: 'group',
+      name: group.name,
+      isActive: group.is_active,
+      meta: { userCount: groupUsers.length },
+      children: groupUsers.map(buildUserNode),
+      data: group,
+    }
+  }, [users, buildUserNode])
+
+  // 部署ノードを生成
+  const buildDepartmentNode = useCallback((dept: Department): TreeNodeData => {
+    const deptGroups = groups.filter((g) => g.department_id === dept.id)
+    return {
+      id: `dept-${dept.id}`,
+      type: 'department',
+      name: dept.name,
+      isActive: dept.is_active,
+      children: deptGroups.map(buildGroupNode),
+      data: dept,
+    }
+  }, [groups, buildGroupNode])
+
+  // 企業ノードを生成
+  const buildCompanyNode = useCallback((company: Company): TreeNodeData => {
+    const companyDepts = departments.filter((d) => d.company_id === company.id)
+    const companyUserCount = users.filter((u) => u.company_id === company.id).length
+    return {
+      id: `company-${company.id}`,
+      type: 'company',
+      name: company.name,
+      isActive: company.is_active,
+      meta: { userCount: companyUserCount },
+      children: companyDepts.map(buildDepartmentNode),
+      data: company,
+    }
+  }, [departments, users, buildDepartmentNode])
+
+  // ツリーデータを構築
+  const treeData = useMemo(
+    (): TreeNodeData[] => companies.map(buildCompanyNode),
+    [companies, buildCompanyNode]
+  )
+
+  // ノードの展開/折畳を切り替え
+  const toggleNode = useCallback((id: string) => {
+    setExpandedNodes((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }, [])
+
+  // 全ノードを展開
+  const expandAll = useCallback(() => {
+    const allIds = new Set<string>()
+    const collectIds = (nodes: TreeNodeData[]) => {
+      nodes.forEach((node) => {
+        if (node.children?.length) {
+          allIds.add(node.id)
+          collectIds(node.children)
+        }
+      })
+    }
+    collectIds(treeData)
+    setExpandedNodes(allIds)
+  }, [treeData])
+
+  // 全ノードを折畳
+  const collapseAll = useCallback(() => {
+    setExpandedNodes(new Set())
+  }, [])
+
+  // コンテキストメニューを表示
+  const handleContextMenu = useCallback((e: React.MouseEvent, node: TreeNodeData) => {
+    e.preventDefault()
+    setContextMenu({
+      isOpen: true,
+      x: e.clientX,
+      y: e.clientY,
+      node,
+    })
+  }, [])
+
+  // コンテキストメニューを閉じる
+  const closeContextMenu = useCallback(() => {
+    setContextMenu({ isOpen: false, x: 0, y: 0, node: null })
+  }, [])
+
+  // ノードタイプに応じたアイコンを取得
+  const getIcon = (type: NodeType) => {
+    switch (type) {
+      case 'company':
+        return <BuildingOffice2Icon className="w-4 h-4 text-blue-500" />
+      case 'department':
+        return <BuildingOfficeIcon className="w-4 h-4 text-green-500" />
+      case 'group':
+        return <UsersIcon className="w-4 h-4 text-purple-500" />
+      default:
+        return <UserIcon className="w-4 h-4 text-gray-500" />
+    }
+  }
+
+  // ロールに応じたバッジを取得
+  const getRoleBadge = (role: string) => {
+    const variant = role === 'super_admin' ? 'error' : role === 'group_admin' ? 'warning' : 'primary'
+    const label = role === 'super_admin' ? 'SA' : role === 'group_admin' ? 'GA' : 'TR'
+    return (
+      <Badge variant={variant} size="sm">
+        {label}
+      </Badge>
+    )
+  }
+
+  // ツリーノードをレンダリング
+  const renderNode = (node: TreeNodeData, depth = 0): React.ReactElement => {
+    const isExpanded = expandedNodes.has(node.id)
+    const hasChildren = node.children && node.children.length > 0
+
+    const handleClick = () => {
+      if (hasChildren) {
+        toggleNode(node.id)
+      }
+      // グループクリック時は詳細画面へ遷移
+      if (node.type === 'group' && node.data) {
+        navigate(`/admin/groups/${(node.data as Group).id}`)
+      }
+    }
+
+    return (
+      <div key={node.id}>
+        <div
+          className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer rounded-lg"
+          style={{ paddingLeft: 12 + depth * 24 }}
+          onClick={handleClick}
+          onContextMenu={(e) => handleContextMenu(e, node)}
+        >
+          {/* 展開/折畳ボタン */}
+          {hasChildren ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleNode(node.id)
+              }}
+              className="p-0.5 hover:bg-gray-200 rounded"
+            >
+              {isExpanded ? (
+                <ChevronDownIcon className="w-4 h-4" />
+              ) : (
+                <ChevronRightIcon className="w-4 h-4" />
+              )}
+            </button>
+          ) : (
+            <span className="w-5" />
+          )}
+
+          {/* アイコン */}
+          {getIcon(node.type)}
+
+          {/* 名前 */}
+          <span className="flex-1 text-sm">{node.name}</span>
+
+          {/* ユーザーのロールバッジ */}
+          {node.type === 'user' && node.meta?.role && getRoleBadge(node.meta.role)}
+
+          {/* ユーザー数カウント */}
+          {node.type !== 'user' && node.meta?.userCount !== undefined && (
+            <span className="text-xs text-text-light">{node.meta.userCount}</span>
+          )}
+        </div>
+
+        {/* 子ノード */}
+        {isExpanded && hasChildren && (
+          <div>
+            {node.children!.map((child) => renderNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // コンテキストメニューの項目をレンダリング
+  const renderContextMenu = () => {
+    if (!contextMenu.isOpen || !contextMenu.node) return null
+
+    const { node } = contextMenu
+
+    return (
+      <div
+        className="fixed bg-white rounded-lg shadow-lg border py-1 z-50 min-w-[160px]"
+        style={{ left: contextMenu.x, top: contextMenu.y }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 企業メニュー */}
+        {node.type === 'company' && (
+          <button
+            onClick={() => {
+              if (onEditCompany && node.data) {
+                onEditCompany(node.data as Company)
+              }
+              closeContextMenu()
+            }}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"
+          >
+            <PencilIcon className="w-4 h-4" />
+            編集
+          </button>
+        )}
+
+        {/* 部署メニュー */}
+        {node.type === 'department' && (
+          <button
+            onClick={() => {
+              if (onEditDepartment && node.data) {
+                onEditDepartment(node.data as Department)
+              }
+              closeContextMenu()
+            }}
+            className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"
+          >
+            <PencilIcon className="w-4 h-4" />
+            編集
+          </button>
+        )}
+
+        {/* グループメニュー */}
+        {node.type === 'group' && (
+          <>
+            <button
+              onClick={() => {
+                if (node.data) {
+                  navigate(`/admin/groups/${(node.data as Group).id}`)
+                }
+                closeContextMenu()
+              }}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100"
+            >
+              詳細を表示
+            </button>
+            <button
+              onClick={() => {
+                if (onAddUser && node.data) {
+                  onAddUser(node.data as Group)
+                }
+                closeContextMenu()
+              }}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"
+            >
+              <UserPlusIcon className="w-4 h-4" />
+              ユーザー追加
+            </button>
+            <button
+              onClick={() => {
+                if (onEditGroup && node.data) {
+                  onEditGroup(node.data as Group)
+                }
+                closeContextMenu()
+              }}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"
+            >
+              <PencilIcon className="w-4 h-4" />
+              編集
+            </button>
+          </>
+        )}
+
+        {/* ユーザーメニュー */}
+        {node.type === 'user' && (
+          <>
+            <button
+              onClick={() => {
+                if (onEditUser && node.data) {
+                  onEditUser(node.data as ProfileWithRelations)
+                }
+                closeContextMenu()
+              }}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"
+            >
+              <PencilIcon className="w-4 h-4" />
+              編集
+            </button>
+            <button
+              onClick={() => {
+                if (onDeleteUser && node.data) {
+                  onDeleteUser(node.data as ProfileWithRelations)
+                }
+                closeContextMenu()
+              }}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 text-error flex gap-2"
+            >
+              <TrashIcon className="w-4 h-4" />
+              削除
+            </button>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative" onClick={closeContextMenu}>
+      {/* 展開/折畳ボタン */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={expandAll}
+          className="px-3 py-1.5 text-sm hover:bg-gray-100 rounded-lg"
+        >
+          全て展開
+        </button>
+        <button
+          onClick={collapseAll}
+          className="px-3 py-1.5 text-sm hover:bg-gray-100 rounded-lg"
+        >
+          全て折畳
+        </button>
+      </div>
+
+      {/* ツリー */}
+      <div className="space-y-1">
+        {treeData.map((node) => renderNode(node))}
+      </div>
+
+      {/* コンテキストメニュー */}
+      {renderContextMenu()}
+    </div>
+  )
 }

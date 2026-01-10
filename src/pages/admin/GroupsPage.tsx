@@ -20,13 +20,8 @@ import { UserForm, type UserFormSubmitData } from '@/components/admin/UserForm'
 import { useAuth } from '@/hooks/useAuth'
 import { hasPermission } from '@/types/database'
 import { Breadcrumb } from '@/components/common/Breadcrumb'
+import { generatePassword } from '@/utils/password'
 import type { Group, GroupTrainingDate, Company, Department } from '@/types/database'
-
-// ランダムパスワード生成用
-function generatePassword(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
-  return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-}
 
 type SortField = 'name' | 'company' | 'memberCount' | 'startDate'
 type SortDirection = 'asc' | 'desc'
@@ -426,7 +421,7 @@ export function GroupsPage() {
       }
 
       // 招待メール送信
-      await fetch('/.netlify/functions/send-invitation', {
+      const emailResponse = await fetch('/.netlify/functions/send-invitation', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -439,7 +434,12 @@ export function GroupsPage() {
         }),
       })
 
-      setSuccessMessage(`${data.name}さんを${selectedGroupForUserAdd.name}に追加しました`)
+      if (!emailResponse.ok) {
+        console.error('Failed to send invitation email')
+        setSuccessMessage(`${data.name}さんを${selectedGroupForUserAdd.name}に追加しました（※招待メールの送信に失敗しました）`)
+      } else {
+        setSuccessMessage(`${data.name}さんを${selectedGroupForUserAdd.name}に追加し、招待メールを送信しました`)
+      }
       setIsUserAddModalOpen(false)
       setSelectedGroupForUserAdd(null)
       fetchGroups() // メンバー数を更新

@@ -4,12 +4,19 @@
 // ============================================
 
 import type { Handler, HandlerEvent } from '@netlify/functions'
+import { SupabaseClient } from '@supabase/supabase-js'
 import { checkAuth, handlePreflight, checkMethod } from './shared/auth'
 import { getCorsHeaders } from './shared/cors'
 import { ErrorResponses } from './shared/errors'
 import { streamCompletion, formatSSEToken, formatSSEDone, formatSSEError, AIMessage } from './shared/ai-providers'
 import { checkTokenLimits, recordTokenUsage, calculateCost } from './shared/token-tracking'
 import { sanitizeUserInput } from './shared/validation'
+import { searchSimilarContent, SimilarContent } from './shared/embeddings'
+
+// ============================================
+// 定数定義
+// ============================================
+const MAX_CHAPTER_CONTENT_LENGTH = 1000  // チャプター内容の最大文字数
 
 // ============================================
 // エスカレーション通知ペイロード型
@@ -104,25 +111,139 @@ function checkEscalation(message: string): { shouldEscalate: boolean; trigger?: 
 }
 
 // ============================================
-// QA用システムプロンプト
+// QA用システムプロンプト（ベース）
 // ============================================
-const QA_SYSTEM_PROMPT = `あなたはAI研修プラットフォームのQAアシスタントです。
-ユーザーからの質問に丁寧に回答してください。
+const QA_BASE_PROMPT = `あなたはAI研修プラットフォーム専用のQAアシスタントです。
+このプラットフォームに関する質問にのみ回答してください。
 
-対応範囲:
-- プラットフォームの使い方に関する質問
-- カリキュラムや研修内容に関する一般的な質問
-- AI（ChatGPT, Claude, Gemini）の基本的な使い方
+【対応範囲】
+- プラットフォームの使い方・操作方法
+- カリキュラムや研修内容に関する質問
+- AI（ChatGPT, Claude, Gemini）の業務活用方法
+- 研修の進め方・学習方法のアドバイス
 
-対応範囲外:
-- システムの不具合やバグの報告 → 管理者へエスカレーション
+【対応範囲外 - 回答を拒否】
+- 研修プラットフォームと無関係な一般的な質問
+- 雑談・世間話・個人的な相談
+- プログラミングの具体的なコード作成依頼
+- 翻訳・文章作成などの汎用AI作業
+→ これらは「申し訳ございませんが、このQAアシスタントは研修プラットフォームに関する質問専用です。」と回答して終了
+
+【エスカレーション対象】
+- システムの不具合やバグの報告 → 管理者へ転送
 - アカウントや請求に関する問題 → サポートへ案内
-- セキュリティに関する懸念 → 管理者へエスカレーション
+- セキュリティに関する懸念 → 管理者へ転送
 
-重要:
+【重要な指針】
+- 対応範囲外の質問には一切回答しない（トークン節約のため）
 - 分からないことは正直に「分かりません」と伝える
 - 技術的な問題は管理者への連絡を案内する
-- 常に丁寧で親切な対応を心がける`
+- 簡潔で分かりやすい回答を心がける
+- 以下の「参考情報」がある場合は、それを活用して回答する`
+
+// ============================================
+// RAG検索結果からコンテキストを構築
+// ============================================
+function buildRAGContext(similarContent: SimilarContent[]): string {
+  if (similarContent.length === 0) return ''
+
+  const contextParts = similarContent.map((item, index) => {
+    const metadata = item.metadata as { title?: string }
+    const title = metadata.title || '関連情報'
+    return `[${index + 1}] ${title}\n${item.contentChunk}`
+  })
+
+  return `\n\n【参考情報（ナレッジベース）】\n${contextParts.join('\n\n')}`
+}
+
+// ============================================
+// カリキュラムコンテキストを構築
+// ============================================
+async function buildCurriculumContext(
+  supabase: SupabaseClient,
+  profileId: string
+): Promise<string> {
+  // ユーザーの現在学習中のカリキュラムを取得
+  const { data: progress } = await supabase
+    .from('curriculum_progress')
+    .select(`
+      curriculum_id,
+      current_chapter_id,
+      curricula(name, description),
+      chapters(title, content)
+    `)
+    .eq('profile_id', profileId)
+    .eq('status', 'in_progress')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (!progress) return ''
+
+  // 型アサーション
+  const curriculum = progress.curricula as { name: string; description: string } | null
+  const chapter = progress.chapters as { title: string; content: string } | null
+
+  if (!curriculum) return ''
+
+  let context = `\n\n【現在の学習コンテキスト】
+- カリキュラム: ${curriculum.name}
+- 概要: ${curriculum.description || '（説明なし）'}`
+
+  if (chapter) {
+    context += `\n- 学習中のチャプター: ${chapter.title}`
+    // チャプター内容の一部を含める（長すぎる場合は切り詰め）
+    if (chapter.content) {
+      const truncatedContent = chapter.content.length > MAX_CHAPTER_CONTENT_LENGTH
+        ? chapter.content.substring(0, MAX_CHAPTER_CONTENT_LENGTH) + '...'
+        : chapter.content
+      context += `\n\nチャプター内容（参考）:\n${truncatedContent}`
+    }
+  }
+
+  return context
+}
+
+// ============================================
+// 完全なシステムプロンプトを構築
+// ============================================
+async function buildFullSystemPrompt(
+  supabase: SupabaseClient,
+  profileId: string,
+  userMessage: string,
+  companyId?: string | null
+): Promise<string> {
+  let fullPrompt = QA_BASE_PROMPT
+
+  try {
+    // RAG検索（類似コンテンツを検索）
+    const similarContent = await searchSimilarContent(supabase, userMessage, {
+      matchThreshold: 0.6,
+      matchCount: 3,
+      companyId: companyId || undefined,
+    })
+    const ragContext = buildRAGContext(similarContent)
+    if (ragContext) {
+      fullPrompt += ragContext
+    }
+  } catch (err) {
+    // RAG検索に失敗してもエラーにしない（フォールバック）
+    console.warn('RAG search failed:', err)
+  }
+
+  try {
+    // カリキュラムコンテキスト
+    const curriculumContext = await buildCurriculumContext(supabase, profileId)
+    if (curriculumContext) {
+      fullPrompt += curriculumContext
+    }
+  } catch (err) {
+    // カリキュラムコンテキスト取得に失敗してもエラーにしない
+    console.warn('Curriculum context failed:', err)
+  }
+
+  return fullPrompt
+}
 
 // ============================================
 // ハンドラー
@@ -178,6 +299,14 @@ export const handler: Handler = async (event: HandlerEvent) => {
     // エスカレーション判定
     const escalationCheck = checkEscalation(sanitizedMessage)
 
+    // 動的システムプロンプトを構築（RAG + カリキュラムコンテキスト）
+    const dynamicSystemPrompt = await buildFullSystemPrompt(
+      supabase,
+      user.id,
+      sanitizedMessage,
+      profile.company_id
+    )
+
     // セッション取得または作成
     let session: { id: string }
 
@@ -199,7 +328,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
           profile_id: user.id,
           session_type: 'qa',
           status: 'active',
-          system_prompt: QA_SYSTEM_PROMPT,
+          system_prompt: QA_BASE_PROMPT, // セッションにはベースプロンプトを保存
           title: sanitizedMessage.substring(0, 50) + (sanitizedMessage.length > 50 ? '...' : ''),
           started_at: new Date().toISOString(),
           last_message_at: new Date().toISOString(),
@@ -294,7 +423,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
             provider: 'anthropic',
             model: 'claude-3-5-haiku-20241022', // QAには高速なHaikuを使用
             messages,
-            systemPrompt: QA_SYSTEM_PROMPT,
+            systemPrompt: dynamicSystemPrompt, // RAG + カリキュラムコンテキスト付き
             maxTokens: 2048,
             temperature: 0.5,
           })

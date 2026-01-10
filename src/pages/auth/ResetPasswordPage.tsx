@@ -8,6 +8,9 @@ import { LockClosedIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outli
 import { useAuth } from '@/hooks/useAuth'
 import { Button, Input, Card, Alert } from '@/components/ui'
 
+// セッション確立のタイムアウト（ms）
+const SESSION_TIMEOUT_MS = 5000
+
 const resetPasswordSchema = z.object({
   password: z.string().min(8, 'パスワードは8文字以上で入力してください'),
   confirmPassword: z.string(),
@@ -20,7 +23,7 @@ type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>
 
 export function ResetPasswordPage() {
   const navigate = useNavigate()
-  const { updatePassword, session } = useAuth()
+  const { updatePassword, session, isLoading, isRecoveryMode } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,19 +37,23 @@ export function ResetPasswordPage() {
     resolver: zodResolver(resetPasswordSchema),
   })
 
-  // Check if user has a valid session (from the reset link)
+  // パスワードリセットリンクからのセッション確立を待機
   useEffect(() => {
-    if (!session) {
-      // No session means the reset link is invalid or expired
-      // Wait a bit for the session to be established
-      const timer = setTimeout(() => {
-        if (!session) {
-          navigate('/login')
-        }
-      }, 3000)
-      return () => clearTimeout(timer)
-    }
-  }, [session, navigate])
+    // ロード中は何もしない
+    if (isLoading) return
+
+    // リカバリーモードまたはセッションがあればOK
+    if (isRecoveryMode || session) return
+
+    // セッションがない場合、無効なリンクとしてログインページへ
+    // 少し待ってからリダイレクト（セッション確立の余裕を持たせる）
+    const timer = setTimeout(() => {
+      if (!session && !isRecoveryMode) {
+        navigate('/login')
+      }
+    }, SESSION_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [session, isLoading, isRecoveryMode, navigate])
 
   const onSubmit = async (data: ResetPasswordFormData) => {
     setError(null)
@@ -84,7 +91,12 @@ export function ResetPasswordPage() {
             新しいパスワードを設定
           </h2>
 
-          {success ? (
+          {isLoading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-text-light">認証情報を確認中...</p>
+            </div>
+          ) : success ? (
             <div className="text-center">
               <Alert variant="success" className="mb-6">
                 パスワードを更新しました。ログインページにリダイレクトします...

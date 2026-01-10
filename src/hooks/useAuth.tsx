@@ -24,6 +24,7 @@ interface AuthContextType {
   session: Session | null
   isLoading: boolean
   isAuthenticated: boolean
+  isRecoveryMode: boolean // パスワードリセットモード
   role: UserRole | null
   mustChangePassword: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null; role: UserRole | null; mustChangePassword: boolean }>
@@ -40,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false) // パスワードリセットモード
 
   const isProcessingRef = useRef(false)
   const isMountedRef = useRef(true)
@@ -127,6 +129,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (event === 'SIGNED_OUT') {
           clearState()
+          setIsRecoveryMode(false)
+          return
+        }
+
+        // パスワードリセットリンクからのアクセス時
+        if (event === 'PASSWORD_RECOVERY' && newSession) {
+          setSession(newSession)
+          setUser(newSession.user)
+          setIsRecoveryMode(true)
+          setIsLoading(false)
+          isLoadingRef.current = false
           return
         }
 
@@ -279,6 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     isLoading,
     isAuthenticated: !!session && !!profile,
+    isRecoveryMode,
     role: profile?.role ?? null,
     mustChangePassword: profile?.must_change_password ?? false,
     signIn,

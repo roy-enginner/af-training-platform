@@ -1,0 +1,37 @@
+import React, { useState, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ChevronRightIcon, ChevronDownIcon, BuildingOffice2Icon, BuildingOfficeIcon, UsersIcon, UserIcon, PencilIcon, TrashIcon, UserPlusIcon } from '@heroicons/react/24/outline'
+import { Badge } from '@/components/ui'
+import type { Company, Department, Group, ProfileWithRelations } from '@/types/database'
+
+export type NodeType = 'company' | 'department' | 'group' | 'user'
+
+export interface TreeNodeData {
+  id: string; type: NodeType; name: string; isActive?: boolean
+  meta?: { email?: string; role?: string; userCount?: number; groupCount?: number; departmentCount?: number }
+  children?: TreeNodeData[]; data?: Company | Department | Group | ProfileWithRelations
+}
+
+interface OrganizationTreeProps {
+  companies: Company[]; departments: Department[]; groups: Group[]; users: ProfileWithRelations[]
+  onAddUser?: (group: Group) => void; onEditCompany?: (company: Company) => void
+  onEditDepartment?: (department: Department) => void; onEditGroup?: (group: Group) => void
+  onEditUser?: (user: ProfileWithRelations) => void; onDeleteUser?: (user: ProfileWithRelations) => void
+}
+
+interface ContextMenuState { isOpen: boolean; x: number; y: number; node: TreeNodeData | null }
+
+export function OrganizationTree({ companies, departments, groups, users, onAddUser, onEditCompany, onEditDepartment, onEditGroup, onEditUser, onDeleteUser }: OrganizationTreeProps) {
+  const navigate = useNavigate()
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({ isOpen: false, x: 0, y: 0, node: null })
+  const treeData = useMemo((): TreeNodeData[] => companies.map((co) => ({ id: 'company-' + co.id, type: 'company' as NodeType, name: co.name, isActive: co.is_active, meta: { userCount: users.filter(u => u.company_id === co.id).length }, children: departments.filter(d => d.company_id === co.id).map(dept => ({ id: 'dept-' + dept.id, type: 'department' as NodeType, name: dept.name, isActive: dept.is_active, children: groups.filter(g => g.department_id === dept.id).map(grp => ({ id: 'group-' + grp.id, type: 'group' as NodeType, name: grp.name, isActive: grp.is_active, meta: { userCount: users.filter(u => u.group_id === grp.id).length }, children: users.filter(u => u.group_id === grp.id).map(u => ({ id: 'user-' + u.id, type: 'user' as NodeType, name: u.name, meta: { role: u.role }, data: u })), data: grp })), data: dept })), data: co })), [companies, departments, groups, users])
+  const toggleNode = useCallback((id: string) => setExpandedNodes(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n }), [])
+  const expandAll = useCallback(() => { const s = new Set<string>(); const f = (ns: TreeNodeData[]) => ns.forEach(n => { if (n.children?.length) { s.add(n.id); f(n.children) } }); f(treeData); setExpandedNodes(s) }, [treeData])
+  const collapseAll = useCallback(() => setExpandedNodes(new Set()), [])
+  const handleContext = useCallback((e: React.MouseEvent, n: TreeNodeData) => { e.preventDefault(); setContextMenu({ isOpen: true, x: e.clientX, y: e.clientY, node: n }) }, [])
+  const closeContext = useCallback(() => setContextMenu({ isOpen: false, x: 0, y: 0, node: null }), [])
+  const icon = (t: NodeType) => t === 'company' ? <BuildingOffice2Icon className="w-4 h-4 text-blue-500"/> : t === 'department' ? <BuildingOfficeIcon className="w-4 h-4 text-green-500"/> : t === 'group' ? <UsersIcon className="w-4 h-4 text-purple-500"/> : <UserIcon className="w-4 h-4 text-gray-500"/>
+  const render = (n: TreeNodeData, d = 0): React.ReactElement => { const exp = expandedNodes.has(n.id), ch = n.children && n.children.length > 0; return (<div key={n.id}><div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer rounded-lg" style={{paddingLeft: 12 + d * 24}} onClick={() => { if (ch) toggleNode(n.id); if (n.type === 'group' && n.data) navigate('/admin/groups/' + (n.data as Group).id) }} onContextMenu={e => handleContext(e, n)}>{ch ? <button onClick={e => { e.stopPropagation(); toggleNode(n.id) }} className="p-0.5 hover:bg-gray-200 rounded">{exp ? <ChevronDownIcon className="w-4 h-4"/> : <ChevronRightIcon className="w-4 h-4"/>}</button> : <span className="w-5"/>}{icon(n.type)}<span className="flex-1 text-sm">{n.name}</span>{n.type === 'user' && n.meta?.role && <Badge variant={n.meta.role === 'super_admin' ? 'error' : n.meta.role === 'group_admin' ? 'warning' : 'primary'} size="sm">{n.meta.role === 'super_admin' ? 'SA' : n.meta.role === 'group_admin' ? 'GA' : 'TR'}</Badge>}{n.type !== 'user' && n.meta?.userCount !== undefined && <span className="text-xs text-text-light">{n.meta.userCount}</span>}</div>{exp && ch && <div>{n.children!.map(c => render(c, d + 1))}</div>}</div>) }
+  return (<div className="relative" onClick={closeContext}><div className="flex gap-2 mb-4"><button onClick={expandAll} className="px-3 py-1.5 text-sm hover:bg-gray-100 rounded-lg">Expand</button><button onClick={collapseAll} className="px-3 py-1.5 text-sm hover:bg-gray-100 rounded-lg">Collapse</button></div><div className="space-y-1">{treeData.map(n => render(n))}</div>{contextMenu.isOpen && contextMenu.node && <div className="fixed bg-white rounded-lg shadow-lg border py-1 z-50 min-w-[160px]" style={{left: contextMenu.x, top: contextMenu.y}} onClick={e => e.stopPropagation()}>{contextMenu.node.type === 'company' && <button onClick={() => { if (onEditCompany && contextMenu.node?.data) onEditCompany(contextMenu.node.data as Company); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"><PencilIcon className="w-4 h-4"/>Edit</button>}{contextMenu.node.type === 'department' && <button onClick={() => { if (onEditDepartment && contextMenu.node?.data) onEditDepartment(contextMenu.node.data as Department); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"><PencilIcon className="w-4 h-4"/>Edit</button>}{contextMenu.node.type === 'group' && <><button onClick={() => { if (contextMenu.node?.data) navigate('/admin/groups/' + (contextMenu.node.data as Group).id); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100">View</button><button onClick={() => { if (onAddUser && contextMenu.node?.data) onAddUser(contextMenu.node.data as Group); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"><UserPlusIcon className="w-4 h-4"/>Add</button><button onClick={() => { if (onEditGroup && contextMenu.node?.data) onEditGroup(contextMenu.node.data as Group); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"><PencilIcon className="w-4 h-4"/>Edit</button></>}{contextMenu.node.type === 'user' && <><button onClick={() => { if (onEditUser && contextMenu.node?.data) onEditUser(contextMenu.node.data as ProfileWithRelations); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex gap-2"><PencilIcon className="w-4 h-4"/>Edit</button><button onClick={() => { if (onDeleteUser && contextMenu.node?.data) onDeleteUser(contextMenu.node.data as ProfileWithRelations); closeContext() }} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 text-error flex gap-2"><TrashIcon className="w-4 h-4"/>Delete</button></>}</div>}</div>)
+}

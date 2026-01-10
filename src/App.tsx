@@ -15,6 +15,8 @@ import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
 import { AdminDashboardPage } from '@/pages/admin/DashboardPage'
 import { UsersPage } from '@/pages/admin/UsersPage'
 import { GroupsPage } from '@/pages/admin/GroupsPage'
+import { GroupDetailPage } from '@/pages/admin/GroupDetailPage'
+import { OrganizationPage } from '@/pages/admin/OrganizationPage'
 import { CompaniesPage } from '@/pages/admin/CompaniesPage'
 import { DepartmentsPage } from '@/pages/admin/DepartmentsPage'
 import { CurriculaPage } from '@/pages/admin/CurriculaPage'
@@ -26,6 +28,7 @@ import { SeriesPage } from '@/pages/admin/SeriesPage'
 import { FeedbackPage } from '@/pages/admin/FeedbackPage'
 import { EscalationPage } from '@/pages/admin/EscalationPage'
 import { TokenUsagePage } from '@/pages/admin/TokenUsagePage'
+import KnowledgeBasePage from '@/pages/admin/KnowledgeBasePage'
 
 // Trainee Pages
 import { TraineeDashboardPage } from '@/pages/trainee/DashboardPage'
@@ -75,8 +78,10 @@ function App() {
               }
             >
               <Route index element={<AdminDashboardPage />} />
+              <Route path="organization" element={<OrganizationPage />} />
               <Route path="users" element={<UsersPage />} />
               <Route path="groups" element={<GroupsPage />} />
+              <Route path="groups/:id" element={<GroupDetailPage />} />
               <Route path="companies" element={<CompaniesPage />} />
               <Route path="departments" element={<DepartmentsPage />} />
               <Route path="curricula" element={<CurriculaPage />} />
@@ -87,6 +92,7 @@ function App() {
               <Route path="feedback" element={<FeedbackPage />} />
               <Route path="escalation" element={<EscalationPage />} />
               <Route path="token-usage" element={<TokenUsagePage />} />
+              <Route path="knowledge-base" element={<KnowledgeBasePage />} />
               <Route path="attributes" element={<AttributesPage />} />
             </Route>
 

@@ -1,6 +1,9 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 import { getCorsHeaders, createPreflightResponse } from './shared/cors'
+import { ErrorResponses } from './shared/errors'
+
+const FUNCTION_NAME = 'abort-curriculum-job'
 
 /**
  * カリキュラム生成ジョブをアボートするAPI
@@ -22,11 +25,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
 
   if (!supabaseUrl || !supabaseServiceKey) {
     console.error('Missing Supabase environment variables')
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'Server configuration error' }),
-    }
+    return ErrorResponses.configError(headers, FUNCTION_NAME, 'VITE_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY')
   }
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
@@ -37,32 +36,20 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
   })
 
   if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    }
+    return ErrorResponses.badRequest(headers, FUNCTION_NAME, `HTTPメソッド ${event.httpMethod} は許可されていません。POSTを使用してください。`)
   }
 
   // 認証確認
   const authHeader = event.headers.authorization
   if (!authHeader?.startsWith('Bearer ')) {
-    return {
-      statusCode: 401,
-      headers,
-      body: JSON.stringify({ error: 'Unauthorized' }),
-    }
+    return ErrorResponses.unauthorized(headers, FUNCTION_NAME, 'Authorizationヘッダーが必要です。')
   }
 
   const token = authHeader.split(' ')[1]
   const { data: { user: caller }, error: authError } = await supabaseAdmin.auth.getUser(token)
 
   if (authError || !caller) {
-    return {
-      statusCode: 401,
-      headers,
-      body: JSON.stringify({ error: 'Invalid token' }),
-    }
+    return ErrorResponses.invalidToken(headers, FUNCTION_NAME)
   }
 
   // 権限確認（super_adminのみ）
@@ -73,11 +60,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     .single()
 
   if (callerProfile?.role !== 'super_admin') {
-    return {
-      statusCode: 403,
-      headers,
-      body: JSON.stringify({ error: 'Super admin access required' }),
-    }
+    return ErrorResponses.superAdminRequired(headers, FUNCTION_NAME)
   }
 
   try {
@@ -85,11 +68,7 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     const { jobId } = body
 
     if (!jobId) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'jobId is required' }),
-      }
+      return ErrorResponses.validationError(headers, FUNCTION_NAME, '削除対象のジョブID（jobId）が必要です。')
     }
 
     // ジョブを取得
@@ -100,22 +79,16 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       .single()
 
     if (fetchError || !job) {
-      return {
-        statusCode: 404,
-        headers,
-        body: JSON.stringify({ error: 'ジョブが見つかりません' }),
-      }
+      return ErrorResponses.notFound(headers, FUNCTION_NAME, 'ジョブ')
     }
 
     // 既に完了またはエラーの場合はスキップ
     if (job.status === 'completed' || job.status === 'failed') {
-      return {
-        statusCode: 400,
+      return ErrorResponses.badRequest(
         headers,
-        body: JSON.stringify({
-          error: `ジョブは既に${job.status === 'completed' ? '完了' : '失敗'}しています`,
-        }),
-      }
+        FUNCTION_NAME,
+        `ジョブは既に${job.status === 'completed' ? '完了' : '失敗'}しています。中断できるのは処理中のジョブのみです。`
+      )
     }
 
     // ジョブをアボート状態に更新
@@ -132,11 +105,12 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
 
     if (updateError) {
       console.error('Failed to abort job:', updateError)
-      return {
-        statusCode: 500,
+      return ErrorResponses.databaseError(
         headers,
-        body: JSON.stringify({ error: 'ジョブのアボートに失敗しました' }),
-      }
+        FUNCTION_NAME,
+        'ジョブステータス更新',
+        `ジョブのアボートに失敗しました: ${updateError.message}`
+      )
     }
 
     console.log(`Job aborted: ${jobId}`)
@@ -151,11 +125,12 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     }
   } catch (error) {
     console.error('Error aborting job:', error)
-    return {
-      statusCode: 500,
+    return ErrorResponses.serverError(
       headers,
-      body: JSON.stringify({ error: 'ジョブのアボート中にエラーが発生しました' }),
-    }
+      FUNCTION_NAME,
+      'リクエスト処理',
+      `予期しないエラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`
+    )
   }
 }
 

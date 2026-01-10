@@ -135,7 +135,8 @@ export function CurriculumJobsList({
       setJobs(data || [])
     } catch (err) {
       console.error('Error fetching jobs:', err)
-      setError('ジョブ一覧の取得に失敗しました')
+      const detail = err instanceof Error ? err.message : '不明なエラー'
+      setError(`[カリキュラム管理/ジョブ一覧取得] ジョブ一覧の取得に失敗しました: ${detail}`)
     } finally {
       setIsLoading(false)
     }
@@ -239,7 +240,8 @@ export function CurriculumJobsList({
       onJobAborted?.()
     } catch (err) {
       console.error('Error aborting job:', err)
-      setError(err instanceof Error ? err.message : 'ジョブのアボートに失敗しました')
+      const errorMsg = err instanceof Error ? err.message : '不明なエラー'
+      setError(errorMsg.startsWith('[') ? errorMsg : `[カリキュラム管理/ジョブ中断] ジョブのアボートに失敗しました: ${errorMsg}`)
     } finally {
       setAbortingJobId(null)
     }

@@ -18,6 +18,7 @@ import { CurriculumForm, type CurriculumFormSubmitData } from '@/components/admi
 import { CurriculumGenerateForm } from '@/components/admin/CurriculumGenerateForm'
 import { CurriculumFromMaterialForm } from '@/components/admin/CurriculumFromMaterialForm'
 import { CurriculumAssignmentManager } from '@/components/admin/CurriculumAssignmentManager'
+import { CurriculumJobsList } from '@/components/admin/CurriculumJobsList'
 import { useAuth } from '@/hooks/useAuth'
 import { hasPermission } from '@/types/database'
 import type { Curriculum, ContentType, DifficultyLevel } from '@/types/database'
@@ -437,6 +438,13 @@ export function CurriculaPage() {
           {successMessage}
         </Alert>
       )}
+
+      {/* Active Jobs Section */}
+      <CurriculumJobsList
+        filter="active"
+        maxItems={5}
+        onJobAborted={fetchCurricula}
+      />
 
       {/* Search and Filters */}
       <Card padding="sm">

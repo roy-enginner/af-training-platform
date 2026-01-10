@@ -106,6 +106,16 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     return { statusCode: 200, body: 'Job already processed' }
   }
 
+  // ジョブがアボートされていないか定期的にチェックするヘルパー
+  const checkIfAborted = async (): Promise<boolean> => {
+    const { data: currentJob } = await supabaseAdmin
+      .from('curriculum_generation_jobs')
+      .select('status')
+      .eq('id', jobId)
+      .single()
+    return currentJob?.status === 'failed'
+  }
+
   try {
     // 処理開始
     await updateJobProgress(supabaseAdmin, jobId, {
@@ -148,12 +158,20 @@ ${difficultyLabel}
 各チャプターには、タイトル、概要、学習目標、所要時間を含めてください。
 詳細なコンテンツは後のステップで作成するため、この段階では構成のみを出力してください。`
 
+    // アボートチェック
+    if (await checkIfAborted()) {
+      console.log('Job was aborted before generation:', jobId)
+      return { statusCode: 200, body: 'Job was aborted' }
+    }
+
     // 生成中に更新
     await updateJobProgress(supabaseAdmin, jobId, {
       status: 'generating',
       progress: 30,
       current_step: 'カリキュラム構成を生成中...',
     })
+
+    console.log(`Starting Claude API call for job: ${jobId}`)
 
     // Claude Opus 4.5 で構成を生成
     const message = await anthropic.messages.create({
@@ -167,6 +185,8 @@ ${difficultyLabel}
       ],
       system: STRUCTURE_SYSTEM_PROMPT,
     })
+
+    console.log(`Claude API response received for job: ${jobId}, tokens: ${message.usage.input_tokens + message.usage.output_tokens}`)
 
     // 解析中に更新
     await updateJobProgress(supabaseAdmin, jobId, {
@@ -221,16 +241,36 @@ ${difficultyLabel}
     return { statusCode: 200, body: 'Job completed' }
 
   } catch (error) {
-    console.error('Error processing job:', error)
+    console.error('Error processing job:', jobId, error)
+
+    // ジョブが既にアボートされている場合はエラー記録をスキップ
+    if (await checkIfAborted()) {
+      console.log('Job was already aborted:', jobId)
+      return { statusCode: 200, body: 'Job was aborted' }
+    }
 
     // エラーメッセージを取得
     let errorMessage = 'カリキュラム構成の生成中にエラーが発生しました'
     if (error instanceof Anthropic.APIError) {
+      console.error('Anthropic API Error:', {
+        status: error.status,
+        message: error.message,
+        headers: error.headers,
+      })
+
       if (error.status === 429) {
         errorMessage = 'APIレート制限に達しました。しばらく待ってから再試行してください。'
+      } else if (error.status === 401) {
+        errorMessage = 'API認証エラー: APIキーを確認してください。'
+      } else if (error.status === 500 || error.status === 503) {
+        errorMessage = 'AI APIが一時的に利用できません。しばらく待ってから再試行してください。'
+      } else if (error.status === 408 || error.message.includes('timeout')) {
+        errorMessage = 'AI APIがタイムアウトしました。再試行してください。'
       } else {
-        errorMessage = `AI API エラー: ${error.message}`
+        errorMessage = `AI API エラー (${error.status}): ${error.message}`
       }
+    } else if (error instanceof SyntaxError) {
+      errorMessage = 'AIの応答をJSON形式に解析できませんでした。再試行してください。'
     } else if (error instanceof Error) {
       errorMessage = error.message
     }
